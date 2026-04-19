@@ -54,12 +54,13 @@ class MainActivity : AppCompatActivity() {
     private val requestServicePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        // Check both the dialog result AND any pre-existing grants.
-        // The result map only contains permissions we explicitly requested this time.
+        // We explicitly requested: Location, Camera, Audio, Notifications
         val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
             || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
             || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val audioGranted = permissions[Manifest.permission.RECORD_AUDIO] == true
+            || ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
         if (fineGranted || coarseGranted) {
             startMonitoringService()
@@ -252,7 +253,8 @@ class MainActivity : AppCompatActivity() {
         val permissions = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.CAMERA
+            Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO
         )
         
         // Handle Android 13 (Tiramisu) + media permissions
