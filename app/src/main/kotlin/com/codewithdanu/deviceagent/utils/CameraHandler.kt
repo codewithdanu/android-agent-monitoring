@@ -11,6 +11,9 @@ import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import android.graphics.SurfaceTexture
+import android.os.Handler
+import android.os.Looper
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
@@ -29,6 +32,7 @@ object CameraHandler {
     suspend fun takePhoto(
         context: Context, 
         lifecycleOwner: LifecycleOwner, 
+        cameraFacing: String = "back",
         saveToGallery: Boolean = true
     ): File? = suspendCoroutine { continuation ->
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
@@ -36,42 +40,69 @@ object CameraHandler {
         cameraProviderFuture.addListener({
             try {
                 val cameraProvider = cameraProviderFuture.get()
-                
-                // We use ImageCapture for background capture
+
+                // CRITICAL: Create and attach the SurfaceTexture BEFORE binding.
+                // If we set it after bind, CameraX resets and drops all use cases.
+                val surfaceTexture = SurfaceTexture(0).apply {
+                    setDefaultBufferSize(640, 480)
+                }
+                val dummySurface = android.view.Surface(surfaceTexture)
+
+                val preview = Preview.Builder().build().also { prev ->
+                    prev.setSurfaceProvider { request ->
+                        request.provideSurface(dummySurface, ContextCompat.getMainExecutor(context)) {
+                            dummySurface.release()
+                            surfaceTexture.release()
+                        }
+                    }
+                }
+
                 val imageCapture = ImageCapture.Builder()
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                     .build()
 
-                // Default to back camera
-                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+                val requestedSelector = if (cameraFacing == "front") {
+                    CameraSelector.DEFAULT_FRONT_CAMERA
+                } else {
+                    CameraSelector.DEFAULT_BACK_CAMERA
+                }
+                
+                // Fallback to back camera if front doesn't exist (or vice versa)
+                val cameraSelector = if (cameraProvider.hasCamera(requestedSelector)) {
+                    requestedSelector
+                } else {
+                    CameraSelector.DEFAULT_BACK_CAMERA
+                }
 
                 cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, imageCapture)
+                cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageCapture)
 
                 // Create temp file in cache
                 val tempFile = File(context.cacheDir, "remote_capture_${System.currentTimeMillis()}.jpg")
                 val outputOptions = ImageCapture.OutputFileOptions.Builder(tempFile).build()
 
-                imageCapture.takePicture(
-                    outputOptions,
-                    ContextCompat.getMainExecutor(context),
-                    object : ImageCapture.OnImageSavedCallback {
-                        override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                            Log.d(TAG, "Photo captured successfully: ${tempFile.absolutePath}")
-                            
-                            if (saveToGallery) {
-                                saveToPublicGallery(context, tempFile)
-                            }
-                            
-                            continuation.resume(tempFile)
-                        }
+                Log.d(TAG, "Camera bound, waiting for stabilization...")
 
-                        override fun onError(exc: ImageCaptureException) {
-                            Log.e(TAG, "Photo capture failed: ${exc.message}")
-                            continuation.resume(null)
+                // Wait for AE/AF stabilization before firing the shutter
+                Handler(Looper.getMainLooper()).postDelayed({
+                    Log.d(TAG, "Triggering shutter now")
+                    imageCapture.takePicture(
+                        outputOptions,
+                        ContextCompat.getMainExecutor(context),
+                        object : ImageCapture.OnImageSavedCallback {
+                            override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                                Log.d(TAG, "Photo captured successfully: ${tempFile.absolutePath}")
+                                if (saveToGallery) saveToPublicGallery(context, tempFile)
+                                continuation.resume(tempFile)
+                            }
+
+                            override fun onError(exc: ImageCaptureException) {
+                                Log.e(TAG, "Photo capture failed: ${exc.message}")
+                                continuation.resume(null)
+                            }
                         }
-                    }
-                )
+                    )
+                }, 700)
             } catch (e: Exception) {
                 Log.e(TAG, "Camera setup failed: ${e.message}")
                 continuation.resume(null)

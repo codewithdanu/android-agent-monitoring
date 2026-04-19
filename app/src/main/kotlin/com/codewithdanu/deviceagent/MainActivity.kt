@@ -54,11 +54,12 @@ class MainActivity : AppCompatActivity() {
     private val requestServicePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
-        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
-        val notificationGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissions[Manifest.permission.POST_NOTIFICATIONS] ?: false
-        } else true
+        // Check both the dialog result AND any pre-existing grants.
+        // The result map only contains permissions we explicitly requested this time.
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+            || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+            || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
         if (fineGranted || coarseGranted) {
             startMonitoringService()
@@ -265,9 +266,9 @@ class MainActivity : AppCompatActivity() {
             permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            permissions.add(Manifest.permission.FOREGROUND_SERVICE_LOCATION)
-        }
+        // Note: FOREGROUND_SERVICE_LOCATION and FOREGROUND_SERVICE_CAMERA are 'normal' 
+        // permissions in the manifest, not 'dangerous' runtime permissions.
+        // We only request dangerous ones here.
 
         val missingPermissions = permissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED

