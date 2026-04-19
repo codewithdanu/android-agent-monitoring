@@ -35,7 +35,7 @@ object CameraHandler {
         context: Context, 
         lifecycleOwner: LifecycleOwner, 
         cameraFacing: String = "back",
-        saveToGallery: Boolean = true
+        saveToGallery: Boolean = false
     ): File? = suspendCoroutine { continuation ->
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
 

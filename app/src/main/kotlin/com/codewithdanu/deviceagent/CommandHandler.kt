@@ -151,6 +151,7 @@ object CommandHandler {
                 message += "Back photo uploaded. "
                 successCount++
             }
+            try { backPhoto.delete() } catch (_: Exception) {}
         }
 
         if (frontPhoto != null) {
@@ -159,6 +160,7 @@ object CommandHandler {
                 message += "Front photo uploaded."
                 successCount++
             }
+            try { frontPhoto.delete() } catch (_: Exception) {}
         }
 
         if (successCount == 0) {
@@ -183,6 +185,7 @@ object CommandHandler {
                 message += "Back video uploaded. "
                 successCount++
             }
+            try { backVideo.delete() } catch (_: Exception) {}
         }
 
         if (frontVideo != null) {
@@ -191,6 +194,7 @@ object CommandHandler {
                 message += "Front video uploaded."
                 successCount++
             }
+            try { frontVideo.delete() } catch (_: Exception) {}
         }
 
         if (successCount == 0) {
