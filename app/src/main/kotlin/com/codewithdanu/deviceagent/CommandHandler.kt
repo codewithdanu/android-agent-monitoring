@@ -6,7 +6,14 @@ import android.content.Context
 import android.media.AudioManager
 import android.media.RingtoneManager
 import android.util.Log
+import com.codewithdanu.deviceagent.network.NetworkClient
+import com.codewithdanu.deviceagent.utils.CameraHandler
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.File
 
 /**
  * Handles commands received from the server.
@@ -14,7 +21,7 @@ import org.json.JSONObject
 object CommandHandler {
     private const val TAG = "CommandHandler"
 
-    fun execute(service: AgentService, commandType: String, params: JSONObject?): JSONObject {
+    suspend fun execute(service: AgentService, commandType: String, params: JSONObject?): JSONObject {
         Log.i(TAG, "Executing: $commandType")
         return try {
             when (commandType) {
@@ -29,6 +36,8 @@ object CommandHandler {
                     JSONObject().put("message", "Metrics update triggered")
                 }
                 "LIST_FILES" -> listFiles(service, params)
+                "TAKE_PHOTO" -> takePhoto(service)
+                "UPLOAD_FILE" -> uploadFile(service, params)
                 else         -> JSONObject().put("error", "Unknown command: $commandType")
             }
         } catch (e: Exception) {
@@ -64,7 +73,6 @@ object CommandHandler {
             )
 
             // Try alarm URI first, fall back to notification/ringtone
-            // Xiaomi/MIUI often has a missing ContentResolver cache for alarms
             val uri = try {
                 RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
             } catch (e: Exception) { null }
@@ -93,27 +101,72 @@ object CommandHandler {
 
     private fun listFiles(context: Context, params: JSONObject?): JSONObject {
         return try {
-            val path = params?.optString("path", "/sdcard") ?: "/sdcard"
+            val path = params?.optString("directory", "/sdcard") ?: "/sdcard"
             val dir = java.io.File(path)
-            if (!dir.exists() || !dir.isDirectory) {
-                return JSONObject().put("error", "Path not found: $path")
+            
+            if (!dir.exists()) {
+                return JSONObject().put("error", "Directory does not exist: $path")
             }
-            val files = dir.listFiles()?.map { f ->
+            if (!dir.isDirectory) {
+                return JSONObject().put("error", "Not a directory: $path")
+            }
+
+            val fileList = dir.listFiles()
+            if (fileList == null) {
+                return JSONObject().put("error", "Permission Denied: Cannot list files in $path. Try activating 'All Files Access' in app settings.")
+            }
+
+            val files = fileList.map { f ->
                 org.json.JSONObject().apply {
                     put("name", f.name)
                     put("path", f.absolutePath)
                     put("size", if (f.isFile) f.length() else 0)
-                    put("is_dir", f.isDirectory)
+                    put("isDirectory", f.isDirectory)
                     put("modified", f.lastModified())
                 }
-            } ?: emptyList()
+            }
+            
             JSONObject().apply {
-                put("path", path)
-                put("files", org.json.JSONArray(files))
+                put("directory", path)
+                put("items", org.json.JSONArray(files))
             }
         } catch (e: Exception) {
-            Log.e(TAG, "listFiles failed: ${e.message}")
-            JSONObject().put("error", e.message)
+            Log.e(TAG, "listFiles error: ${e.message}")
+            JSONObject().put("error", "System error: ${e.message}")
+        }
+    }
+
+    private suspend fun takePhoto(service: AgentService): JSONObject {
+        val photoFile = CameraHandler.takePhoto(service, service) 
+            ?: return JSONObject().put("error", "Failed to capture photo")
+        return doUpload(service, photoFile)
+    }
+
+    private suspend fun uploadFile(service: AgentService, params: JSONObject?): JSONObject {
+        val path = params?.optString("file_path") 
+            ?: return JSONObject().put("error", "file_path is required")
+        val file = File(path)
+        if (!file.exists()) return JSONObject().put("error", "File not found at $path")
+        return doUpload(service, file)
+    }
+
+    private suspend fun doUpload(context: Context, file: File): JSONObject {
+        val prefs = context.getSharedPreferences(AgentConfig.PREFS_NAME, Context.MODE_PRIVATE)
+        val deviceId = prefs.getString(AgentConfig.KEY_DEVICE_ID, "") ?: ""
+
+        val deviceIdBody = deviceId.toRequestBody("text/plain".toMediaTypeOrNull())
+        val fileBody = file.asRequestBody("application/octet-stream".toMediaTypeOrNull())
+        val filePart = MultipartBody.Part.createFormData("file", file.name, fileBody)
+
+        val api = NetworkClient.getApiService(context)
+        val response = api.uploadFile(deviceIdBody, filePart)
+
+        return if (response.isSuccessful) {
+            JSONObject().put("message", "File uploaded successfully")
+                .put("file_name", file.name)
+        } else {
+            val errorMsg = response.errorBody()?.string() ?: "Unknown error"
+            JSONObject().put("error", "Upload failed: $errorMsg")
         }
     }
 }

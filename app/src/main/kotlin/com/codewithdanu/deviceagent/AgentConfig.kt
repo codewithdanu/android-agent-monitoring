@@ -6,7 +6,7 @@ package com.codewithdanu.deviceagent
  */
 object AgentConfig {
     // ─── DEFAULT VALUES ───────────────────────────────────────────────────
-    var SERVER_URL = "http://IP_ADDRESS:3000" // Can be updated via QR
+    var SERVER_URL = "http://<IP_ADDRESS>:3000" // Can be updated via QR
     // ──────────────────────────────────────────────────────────────────────
 
     const val PREFS_NAME        = "AgentPrefs"

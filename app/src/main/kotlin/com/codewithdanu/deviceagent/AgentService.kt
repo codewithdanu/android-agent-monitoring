@@ -9,13 +9,14 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
+import androidx.lifecycle.LifecycleService
 import org.json.JSONObject
 
 /**
  * Persistent foreground service — keeps the agent alive even when app is backgrounded.
  * Runs metrics loop, location loop, and socket connection.
  */
-class AgentService : Service() {
+class AgentService : LifecycleService() {
     private val TAG = "AgentService"
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -165,8 +166,6 @@ class AgentService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         return START_STICKY  // Restart if killed
     }
-
-    override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
         scope.cancel()

@@ -9,6 +9,9 @@ import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Build
+import android.os.Environment
+import android.provider.Settings
+import android.net.Uri
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
@@ -173,8 +176,17 @@ class MainActivity : AppCompatActivity() {
             text = "Activate Lock Screen Permission"
             setBackgroundColor(0xFFF59E0B.toInt()) // Amber 500
             setTextColor(0xFF000000.toInt())
-            setPadding(48, 0, 48, 0)
+            setPadding(48, 24, 48, 24)
             setOnClickListener { requestDeviceAdmin() }
+        }
+
+        val btnFileAccess = Button(this).apply {
+            text = "Activate Full File Access"
+            setBackgroundColor(0xFF6366F1.toInt()) // Indigo 500
+            setTextColor(0xFFFFFFFF.toInt())
+            setPadding(48, 24, 48, 24)
+            setOnClickListener { requestAllFilesAccess() }
+            visibility = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) View.VISIBLE else View.GONE
         }
 
         layout.addView(title)
@@ -192,6 +204,8 @@ class MainActivity : AppCompatActivity() {
         layout.addView(btnStop)
         layout.addView(TextView(this).apply { height = 24 }) // Spacer
         layout.addView(btnLockAdmin)
+        layout.addView(TextView(this).apply { height = 12 }) // Spacer
+        layout.addView(btnFileAccess)
 
         scroll.addView(layout)
         root.addView(scroll)
@@ -236,11 +250,19 @@ class MainActivity : AppCompatActivity() {
     private fun checkServicePermissionsAndStart() {
         val permissions = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.CAMERA
         )
         
+        // Handle Android 13 (Tiramisu) + media permissions
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+            permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+            permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
+        } else {
+            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            @Suppress("DEPRECATION")
+            permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -367,6 +389,24 @@ class MainActivity : AppCompatActivity() {
                 .addOnCompleteListener { imageProxy.close() }
         } else {
             imageProxy.close()
+        }
+    }
+
+    private fun requestAllFilesAccess() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                    val uri = Uri.fromParts("package", packageName, null)
+                    intent.data = uri
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    startActivity(intent)
+                }
+            } else {
+                Toast.makeText(this, "Full File Access already granted", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 

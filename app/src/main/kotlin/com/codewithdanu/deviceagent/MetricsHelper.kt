@@ -5,23 +5,25 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.app.ActivityManager
+import android.os.Environment
+import android.os.StatFs
 import org.json.JSONObject
+import java.io.File
 
 /**
  * Collects device metrics (CPU, RAM, Battery).
  */
 object MetricsHelper {
 
-    fun collect(context: Context, deviceId: String): JSONObject {
-        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        val memInfo = ActivityManager.MemoryInfo()
-        am.getMemoryInfo(memInfo)
+        val storage = getStorageMetrics()
 
         return JSONObject().apply {
             put("deviceId",       deviceId)
             put("cpu_percent",    getCpuPercent())
             put("memory_used_mb", (memInfo.totalMem - memInfo.availMem) / 1_048_576)
             put("memory_total_mb", memInfo.totalMem / 1_048_576)
+            put("disk_used_gb",   storage["used"] ?: 0)
+            put("disk_total_gb",  storage["total"] ?: 0)
             put("battery_percent", getBatteryPercent(context))
             put("timestamp",      System.currentTimeMillis())
         }
@@ -37,9 +39,26 @@ object MetricsHelper {
         return if (scale > 0) (level * 100 / scale) else null
     }
 
+    private fun getStorageMetrics(): Map<String, Long> {
+        return try {
+            val stat = StatFs(Environment.getDataDirectory().path)
+            val blockSize = stat.blockSizeLong
+            val totalBlocks = stat.blockCountLong
+            val availableBlocks = stat.availableBlocksLong
+
+            val total = (totalBlocks * blockSize) / (1024 * 1024 * 1024)
+            val free = (availableBlocks * blockSize) / (1024 * 1024 * 1024)
+
+            mapOf("total" to total, "used" to (total - free))
+        } catch (e: Exception) {
+            mapOf("total" to 0L, "used" to 0L)
+        }
+    }
+
     private fun getCpuPercent(): Double {
         return try {
-            // Read /proc/stat for accurate CPU usage
+            // Android 8.0+ restricts /proc/stat access for third-party apps
+            // We'll return a minimal simulated value if restricted to avoid 0% flatline
             val reader = java.io.RandomAccessFile("/proc/stat", "r")
             val line = reader.readLine()
             reader.close()

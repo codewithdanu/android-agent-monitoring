@@ -45,6 +45,8 @@ dependencies {
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
 
+    implementation("androidx.lifecycle:lifecycle-service:2.6.2")
+
     // Camera & QR Scanning
     implementation("androidx.camera:camera-camera2:1.3.0")
     implementation("androidx.camera:camera-lifecycle:1.3.0")
