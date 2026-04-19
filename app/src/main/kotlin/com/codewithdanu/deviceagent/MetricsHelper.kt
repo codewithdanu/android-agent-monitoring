@@ -14,6 +14,10 @@ import java.io.File
  * Collects device metrics (CPU, RAM, Battery).
  */
 object MetricsHelper {
+    fun collect(context: Context, deviceId: String): JSONObject {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memInfo = ActivityManager.MemoryInfo()
+        am.getMemoryInfo(memInfo)
 
         val storage = getStorageMetrics()
 
