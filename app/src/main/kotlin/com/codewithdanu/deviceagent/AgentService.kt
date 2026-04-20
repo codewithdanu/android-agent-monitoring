@@ -62,9 +62,12 @@ class AgentService : LifecycleService() {
 
     private fun connectAndMonitor() {
         // Connect socket
-        SocketManager.connect(this, serverUrl, deviceId, deviceToken) { cmd ->
+        SocketManager.connect(this, serverUrl, deviceId, deviceToken, { cmd ->
             scope.launch { handleCommand(cmd) }
-        }
+        }, {
+            // Callback: Registered
+            scope.launch { flushOfflineLocations() }
+        })
 
         // Metrics loop (adaptive frequency)
         scope.launch {
@@ -141,9 +144,32 @@ class AgentService : LifecycleService() {
             put("latitude",       loc.latitude)
             put("longitude",      loc.longitude)
             put("accuracy_meters", loc.accuracy)
+            put("recorded_at",    java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }.format(java.util.Date()))
         }
-        SocketManager.emit("agent:location", data)
-        Log.d(TAG, "Location sent: ${loc.latitude}, ${loc.longitude}")
+
+        if (SocketManager.isConnected()) {
+            SocketManager.emit("agent:location", data)
+            Log.d(TAG, "Location sent: ${loc.latitude}, ${loc.longitude}")
+        } else {
+            LocationCache.save(this, data)
+            Log.w(TAG, "Device offline — location cached locally")
+        }
+    }
+
+    private suspend fun flushOfflineLocations() {
+        val cachedRows = LocationCache.getAll(this)
+        if (cachedRows.isEmpty()) return
+
+        Log.i(TAG, "Flushing ${cachedRows.size} offline locations to server...")
+        for (row in cachedRows) {
+            SocketManager.emit("agent:location", row)
+            // Small delay to prevent flooding the socket buffer
+            delay(100)
+        }
+        LocationCache.clear(this)
+        Log.i(TAG, "Offline location cache cleared")
     }
 
     private suspend fun handleCommand(cmd: JSONObject) {

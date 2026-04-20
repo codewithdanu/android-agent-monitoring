@@ -23,7 +23,8 @@ object SocketManager {
         serverUrl: String, 
         deviceId: String, 
         deviceToken: String, 
-        onCommand: (JSONObject) -> Unit
+        onCommand: (JSONObject) -> Unit,
+        onRegistered: () -> Unit
     ) {
         if (socket?.connected() == true) return
 
@@ -56,6 +57,7 @@ object SocketManager {
 
             socket?.on("agent:registered") {
                 Log.d(TAG, "Agent registered with server")
+                onRegistered()
             }
 
             socket?.on("command") { args ->
