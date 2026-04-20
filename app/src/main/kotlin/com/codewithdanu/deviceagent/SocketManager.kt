@@ -34,6 +34,9 @@ object SocketManager {
                 .setReconnection(true)
                 .setReconnectionDelay(5000)
                 .setReconnectionAttempts(Int.MAX_VALUE)
+                // Battery Optimization: Less frequent pings while staying alive
+                .setUpgrade(true)
+                .setTimeout(30_000)
                 .build()
 
             socket = IO.socket(serverUrl, opts)

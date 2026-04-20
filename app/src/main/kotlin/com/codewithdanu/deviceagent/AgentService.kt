@@ -21,6 +21,9 @@ class AgentService : LifecycleService() {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var locationHelper: LocationHelper
+    private lateinit var powerManager: android.os.PowerManager
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
+    
     private lateinit var deviceId: String
     private lateinit var deviceToken: String
     private lateinit var serverUrl: String
@@ -40,6 +43,9 @@ class AgentService : LifecycleService() {
         }
 
         locationHelper = LocationHelper(this)
+        
+        powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        wakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "Agent:WakeLock")
 
         val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -60,23 +66,34 @@ class AgentService : LifecycleService() {
             scope.launch { handleCommand(cmd) }
         }
 
-        // Metrics loop
+        // Metrics loop (adaptive frequency)
         scope.launch {
             while (isActive) {
                 try {
-                    sendMetrics()
+                    withWakeLock {
+                        sendMetrics()
+                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "Metrics error: ${e.message}")
                 }
-                delay(AgentConfig.METRICS_INTERVAL_MS)
+                
+                val battery = MetricsHelper.getBatteryPercent(this@AgentService) ?: 100
+                val interval = if (battery < AgentConfig.LOW_BATTERY_THRESHOLD) 
+                    AgentConfig.METRICS_INTERVAL_MS * 5 // 5 min if low
+                else 
+                    AgentConfig.METRICS_INTERVAL_MS
+                    
+                delay(interval)
             }
         }
 
-        // Location loop (adaptive interval based on battery)
+        // Location loop (adaptive based on battery and movement)
         scope.launch {
             while (isActive) {
                 try {
-                    sendLocation()
+                    withWakeLock {
+                        sendLocation()
+                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "Location error: ${e.message}")
                 }
@@ -88,6 +105,17 @@ class AgentService : LifecycleService() {
 
                 Log.d(TAG, "Next location in ${interval / 60000}min (battery: $battery%)")
                 delay(interval)
+            }
+        }
+    }
+
+    private inline fun <T> withWakeLock(block: () -> T): T {
+        try {
+            wakeLock?.acquire(10_000L) // 10s timeout safety
+            return block()
+        } finally {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
             }
         }
     }
@@ -174,6 +202,9 @@ class AgentService : LifecycleService() {
     override fun onDestroy() {
         scope.cancel()
         SocketManager.disconnect()
+        if (wakeLock?.isHeld == true) {
+            wakeLock?.release()
+        }
         Log.i(TAG, "Service destroyed")
         super.onDestroy()
     }

@@ -28,7 +28,7 @@ object MetricsHelper {
             put("memory_total_mb", memInfo.totalMem / 1_048_576)
             put("disk_used_gb",   storage["used"] ?: 0)
             put("disk_total_gb",  storage["total"] ?: 0)
-            put("battery_percent", getBatteryPercent(context))
+            put("battery_percent", getBatteryPercent(`context))
             put("timestamp",      System.currentTimeMillis())
         }
     }

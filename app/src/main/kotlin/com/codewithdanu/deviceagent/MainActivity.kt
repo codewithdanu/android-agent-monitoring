@@ -191,6 +191,14 @@ class MainActivity : AppCompatActivity() {
             visibility = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) View.VISIBLE else View.GONE
         }
 
+        val btnBatteryOpt = Button(this).apply {
+            text = "Disable Battery Optimization (Highly Recommended)"
+            setBackgroundColor(0xFF10B981.toInt()) // Emerald 500
+            setTextColor(0xFFFFFFFF.toInt())
+            setPadding(48, 24, 48, 24)
+            setOnClickListener { requestIgnoreBatteryOptimizations() }
+        }
+
         layout.addView(title)
         layout.addView(subtitle)
         layout.addView(label("Server URL"))
@@ -208,6 +216,8 @@ class MainActivity : AppCompatActivity() {
         layout.addView(btnLockAdmin)
         layout.addView(TextView(this).apply { height = 12 }) // Spacer
         layout.addView(btnFileAccess)
+        layout.addView(TextView(this).apply { height = 12 }) // Spacer
+        layout.addView(btnBatteryOpt)
 
         scroll.addView(layout)
         root.addView(scroll)
@@ -409,6 +419,20 @@ class MainActivity : AppCompatActivity() {
                 }
             } else {
                 Toast.makeText(this, "Full File Access already granted", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun requestIgnoreBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val intent = Intent()
+            val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                intent.action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                intent.data = Uri.parse("package:$packageName")
+                startActivity(intent)
+            } else {
+                Toast.makeText(this, "Battery optimization already disabled", Toast.LENGTH_SHORT).show()
             }
         }
     }
