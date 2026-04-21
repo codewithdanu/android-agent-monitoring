@@ -28,6 +28,11 @@ object CommandHandler {
             when (commandType) {
                 "LOCK_SCREEN"  -> lockScreen(service)
                 "RING_ALARM"   -> ringAlarm(service)
+                "PING", "HEARTBEAT" -> {
+                    service.triggerMetricsUpdate()
+                    service.triggerLocationUpdate()
+                    JSONObject().put("status", "ALIVE").put("timestamp", System.currentTimeMillis())
+                }
                 "GET_LOCATION" -> {
                     service.triggerLocationUpdate()
                     JSONObject().put("message", "Location update triggered")

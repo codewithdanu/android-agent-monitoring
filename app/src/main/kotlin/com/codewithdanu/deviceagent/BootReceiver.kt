@@ -4,6 +4,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import androidx.work.Constraints
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 
@@ -16,6 +18,7 @@ class BootReceiver : BroadcastReceiver() {
         val actions = listOf(
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_LOCKED_BOOT_COMPLETED,
+            Intent.ACTION_USER_PRESENT,
             "android.intent.action.QUICKBOOT_POWERON",
             "com.htc.intent.action.QUICKBOOT_POWERON"
         )
@@ -24,7 +27,13 @@ class BootReceiver : BroadcastReceiver() {
             Log.i("BootReceiver", "Boot action detected: ${intent.action}")
             
             // Using WorkManager to start the service is more reliable on aggressive OEMs
-            val workRequest = OneTimeWorkRequestBuilder<BootWorker>().build()
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
+
+            val workRequest = OneTimeWorkRequestBuilder<BootWorker>()
+                .setConstraints(constraints)
+                .build()
             WorkManager.getInstance(context).enqueue(workRequest)
         }
     }

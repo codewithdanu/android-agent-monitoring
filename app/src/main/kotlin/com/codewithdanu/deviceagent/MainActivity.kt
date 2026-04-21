@@ -23,7 +23,9 @@ import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.google.mlkit.vision.barcode.BarcodeScanner
@@ -301,7 +303,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initWorkManager() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
         val workRequest = PeriodicWorkRequestBuilder<BootWorker>(15, TimeUnit.MINUTES)
+            .setConstraints(constraints)
             .build()
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "AgentWatchdog",
