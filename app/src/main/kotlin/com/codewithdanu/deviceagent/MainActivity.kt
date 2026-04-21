@@ -426,10 +426,13 @@ class MainActivity : AppCompatActivity() {
                                         .putString(AgentConfig.KEY_DEVICE_ID, i)
                                         .putString(AgentConfig.KEY_DEVICE_TOKEN, t)
                                         .apply()
+                                    
+                                    stopCamera()
+                                    Toast.makeText(this, "Setup synced! Starting service...", Toast.LENGTH_LONG).show()
+                                    checkServicePermissionsAndStart()
+                                } else {
+                                    stopCamera()
                                 }
-                                
-                                stopCamera()
-                                Toast.makeText(this, "Setup complete & synced!", Toast.LENGTH_LONG).show()
                             }
                         } catch (e: Exception) {
                         }
