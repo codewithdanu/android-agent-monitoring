@@ -44,13 +44,15 @@ class AgentService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.i(TAG, "AgentService.onCreate() — Startup initiated")
 
         val prefs = AgentConfig.getPrefs(this)
         deviceId    = prefs.getString(AgentConfig.KEY_DEVICE_ID, "") ?: ""
         deviceToken = prefs.getString(AgentConfig.KEY_DEVICE_TOKEN, "") ?: ""
         serverUrl   = AgentConfig.getNormalizedServerUrl(this)
 
-        if (deviceId.isEmpty() || deviceToken.isEmpty()) {
+        Log.d(TAG, "Config loaded: ID=$deviceId URL=$serverUrl")
+        if (deviceId.isEmpty()) {
             Log.e(TAG, "Device not configured — stopping service")
             stopSelf()
             return
@@ -65,7 +67,8 @@ class AgentService : LifecycleService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             val type = ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or 
                        ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or 
-                       ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                       ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                       ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
             startForeground(NOTIFICATION_ID, notification, type)
         } else {
             startForeground(NOTIFICATION_ID, notification)
@@ -84,12 +87,17 @@ class AgentService : LifecycleService() {
     }
 
     private fun connectAndMonitor() {
-        // Connect socket
+        Log.d(TAG, "Initiating socket connection to $serverUrl")
         SocketManager.connect(this, serverUrl, deviceId, deviceToken, { cmd ->
             scope.launch { handleCommand(cmd) }
         }, {
             // Callback: Registered
-            scope.launch { flushOfflineLocations() }
+            Log.i(TAG, "Socket registered successfully. Performing initial sync.")
+            scope.launch { 
+                flushOfflineLocations()
+                sendMetrics()
+                sendLocation(forceHighAccuracy = false)
+            }
         })
 
         // Metrics loop (adaptive frequency)
@@ -135,7 +143,7 @@ class AgentService : LifecycleService() {
         }
     }
 
-    private inline fun <T> withWakeLock(block: () -> T): T {
+    private suspend inline fun <T> withWakeLock(crossinline block: suspend () -> T): T {
         try {
             wakeLock?.acquire(10_000L) // 10s timeout safety
             return block()
@@ -150,8 +158,8 @@ class AgentService : LifecycleService() {
         scope.launch { sendMetrics() }
     }
 
-    fun triggerLocationUpdate() {
-        scope.launch { sendLocation() }
+    fun triggerLocationUpdate(highAccuracy: Boolean = false) {
+        scope.launch { sendLocation(highAccuracy) }
     }
 
     private suspend fun sendMetrics() {
@@ -160,8 +168,8 @@ class AgentService : LifecycleService() {
         Log.d(TAG, "Metrics sent: CPU=${metrics.optDouble("cpu_percent")}%")
     }
 
-    private suspend fun sendLocation() {
-        val loc = locationHelper.getLastLocation() ?: return
+    private suspend fun sendLocation(forceHighAccuracy: Boolean = false) {
+        val loc = locationHelper?.getLastLocation(forceHighAccuracy) ?: return
         val data = JSONObject().apply {
             put("deviceId",       deviceId)
             put("latitude",       loc.latitude)
@@ -202,6 +210,12 @@ class AgentService : LifecycleService() {
 
         Log.i(TAG, "Executing command: $commandType")
         val result = CommandHandler.execute(this, commandType, params)
+
+        if (commandType == "PING") {
+            // Wake up and refresh everything with high accuracy
+            triggerMetricsUpdate()
+            triggerLocationUpdate(highAccuracy = true)
+        }
 
         val response = JSONObject().apply {
             put("commandId", commandId)
@@ -251,6 +265,7 @@ class AgentService : LifecycleService() {
     override fun onDestroy() {
         scope.cancel()
         SocketManager.disconnect()
+        ScreenCaptureHelper.stopSession()
         if (wakeLock?.isHeld == true) {
             wakeLock?.release()
         }

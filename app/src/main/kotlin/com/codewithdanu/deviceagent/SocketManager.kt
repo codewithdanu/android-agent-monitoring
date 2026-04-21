@@ -18,6 +18,16 @@ object SocketManager {
     private const val TAG = "SocketManager"
     private var socket: Socket? = null
 
+    enum class ConnectionStatus { CONNECTING, CONNECTED, DISCONNECTED, ERROR }
+    private var statusListener: ((ConnectionStatus, String?) -> Unit)? = null
+    var currentStatus = ConnectionStatus.DISCONNECTED
+        private set
+
+    fun setStatusListener(listener: (ConnectionStatus, String?) -> Unit) {
+        this.statusListener = listener
+        listener(currentStatus, null) // Emit current state immediately
+    }
+
     fun connect(
         context: Context,
         serverUrl: String, 
@@ -29,21 +39,24 @@ object SocketManager {
         if (socket?.connected() == true) return
 
         try {
-            // Battery Optimization: Less frequent pings while staying alive
+            // Battery Optimization: Fast reconnect initially, then back off
             val opts = IO.Options.builder()
                 .setForceNew(true)
                 .setReconnection(true)
-                .setReconnectionDelay(10000)
-                .setReconnectionDelayMax(30000)
+                .setReconnectionDelay(5000)
+                .setReconnectionDelayMax(60000)
                 .setReconnectionAttempts(Int.MAX_VALUE)
                 .setUpgrade(true)
-                .setTimeout(60_000)
+                .setTimeout(30_000)
                 .build()
 
             socket = IO.socket(serverUrl, opts)
 
             socket?.on(Socket.EVENT_CONNECT) {
                 Log.d(TAG, "Connected. Registering device...")
+                currentStatus = ConnectionStatus.CONNECTED
+                statusListener?.invoke(currentStatus, null)
+
                 val data = JSONObject().apply {
                     put("deviceId", deviceId)
                     put("deviceToken", deviceToken)
@@ -67,12 +80,17 @@ object SocketManager {
             }
 
             socket?.on(Socket.EVENT_DISCONNECT) { args ->
-                Log.d(TAG, "Disconnected: ${args.firstOrNull()}")
+                val reason = args.firstOrNull()?.toString()
+                Log.d(TAG, "Disconnected: $reason")
+                currentStatus = ConnectionStatus.DISCONNECTED
+                statusListener?.invoke(currentStatus, reason)
             }
 
             socket?.on(Socket.EVENT_CONNECT_ERROR) { args ->
                 val err = args.firstOrNull()?.toString() ?: "Unknown error"
                 Log.e(TAG, "Connection error: $err")
+                currentStatus = ConnectionStatus.ERROR
+                statusListener?.invoke(currentStatus, err)
                 
                 Handler(Looper.getMainLooper()).post {
                     Toast.makeText(context, "Connection Error: $err", Toast.LENGTH_LONG).show()

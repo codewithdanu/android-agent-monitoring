@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Device Agent</string>
+    <string name="activity_monitor_description">Monitors app usage and screen content for security analysis.</string>
 </resources>

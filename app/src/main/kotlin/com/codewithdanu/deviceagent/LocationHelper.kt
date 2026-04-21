@@ -17,8 +17,10 @@ class LocationHelper(context: Context) {
         LocationServices.getFusedLocationProviderClient(context)
 
     @SuppressLint("MissingPermission")
-    suspend fun getLastLocation(): Location? = suspendCancellableCoroutine { cont ->
-        client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+    suspend fun getLastLocation(highAccuracy: Boolean = false): Location? = suspendCancellableCoroutine { cont ->
+        val priority = if (highAccuracy) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
+        
+        client.getCurrentLocation(priority, null)
             .addOnSuccessListener { loc -> cont.resume(loc) }
             .addOnFailureListener { cont.resume(null) }
             .addOnCanceledListener   { cont.resume(null) }

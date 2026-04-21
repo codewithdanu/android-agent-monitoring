@@ -31,6 +31,7 @@ import androidx.work.WorkManager
 import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
+import com.codewithdanu.deviceagent.utils.PermissionInstructions
 import org.json.JSONObject
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -40,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var etDeviceId: EditText
     private lateinit var etDeviceToken: EditText
     private lateinit var etServerUrl: EditText
+    private lateinit var tvStatus: TextView
     private lateinit var cameraExecutor: ExecutorService
     
     // Scanner UI elements
@@ -104,7 +106,20 @@ class MainActivity : AppCompatActivity() {
             text = "Configure your monitoring node"
             textSize = 14f
             setTextColor(0xFF64748B.toInt()) // Slate 500
-            setPadding(0, 0, 0, 64)
+            setPadding(0, 0, 0, 32)
+        }
+
+        tvStatus = TextView(this).apply {
+            text = "Status: Initializing..."
+            textSize = 11f
+            setPadding(24, 16, 24, 16)
+            gravity = android.view.Gravity.CENTER
+            setTextColor(0xFF475569.toInt()) // Slate 600
+            typeface = android.graphics.Typeface.MONOSPACE
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xFFF1F5F9.toInt())
+                cornerRadius = 16f
+            }
         }
 
         etServerUrl = EditText(this).apply {
@@ -217,27 +232,118 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { requestIgnoreBatteryOptimizations() }
         }
 
+        val btnForceReconnect = Button(this).apply {
+            text = "Force Re-connect Socket"
+            styleAsSecondary()
+            setOnClickListener {
+                SocketManager.reconnect()
+                Toast.makeText(this@MainActivity, "Reconnecting...", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        val btnAccessibility = Button(this).apply {
+            text = "Activate Activity Monitor"
+            setBackgroundColor(0xFF8B5CF6.toInt()) // Violet 500
+            setTextColor(0xFFFFFFFF.toInt())
+            setPadding(48, 24, 48, 24)
+            setOnClickListener {
+                PermissionInstructions.showAccessibilityTutorial(this@MainActivity) {
+                    try {
+                        startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    } catch (e: Exception) {
+                        Toast.makeText(this@MainActivity, "Could not open settings", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+
+        val btnScreenCapture = Button(this).apply {
+            text = "Enable Screen Capture Session"
+            setBackgroundColor(0xFF06B6D4.toInt()) // Cyan 500
+            setTextColor(0xFFFFFFFF.toInt())
+            setPadding(48, 24, 48, 24)
+            setOnClickListener {
+                if (ScreenCaptureHelper.hasPermission()) {
+                    Toast.makeText(this@MainActivity, "✨ Screen Capture is already active!", Toast.LENGTH_SHORT).show()
+                } else {
+                    PermissionInstructions.showScreenCaptureInfo(this@MainActivity) {
+                        ScreenCaptureHelper.requestPermission(this@MainActivity)
+                    }
+                }
+            }
+        }
+
+        val btnRestricted = Button(this).apply {
+            text = "Fix Restricted Settings"
+            styleAsSecondary()
+            setOnClickListener {
+                PermissionInstructions.showRestrictedSettingsTutorial(this@MainActivity) {
+                    try {
+                        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = android.net.Uri.fromParts("package", packageName, null)
+                        }
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                        Toast.makeText(this@MainActivity, "Could not open settings", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+
+        // ─── SECTION: CONNECTION ───────────────────────────────────────────────
+        val sectionConnection = createSection("Connection Setup", R.drawable.ic_save) {
+            addView(label("Server URL"))
+            addView(etServerUrl)
+            addView(label("Device Identity"))
+            addView(etDeviceId)
+            addView(label("Security Token"))
+            addView(etDeviceToken)
+            addView(TextView(this@MainActivity).apply { height = 32 })
+            addView(btnScan)
+            addView(btnSave)
+        }
+
+        // ─── SECTION: OPTIMIZATION ─────────────────────────────────────────────
+        val sectionOptimization = createSection("System Readiness", R.drawable.ic_devices) {
+            addView(btnLockAdmin)
+            addView(spacer(12))
+            addView(btnBatteryOpt)
+            addView(spacer(12))
+            addView(btnXiaomi)
+        }
+
+        // ─── SECTION: FEATURES ─────────────────────────────────────────────────
+        val sectionFeatures = createSection("Advanced Features", R.drawable.ic_camera) {
+            addView(btnAccessibility)
+            addView(spacer(12))
+            addView(btnScreenCapture)
+            addView(spacer(12))
+            addView(btnFileAccess)
+            addView(spacer(12))
+            addView(btnRestricted)
+        }
+
+        // ─── SECTION: ACTIONS ──────────────────────────────────────────────────
+        val sectionActions = createSection("Service Control", R.drawable.ic_play) {
+            addView(btnStart)
+            addView(btnStop)
+            addView(spacer(24))
+            addView(btnForceReconnect)
+        }
+
         layout.addView(title)
         layout.addView(subtitle)
-        layout.addView(label("Server URL"))
-        layout.addView(etServerUrl)
-        layout.addView(label("Device Identity"))
-        layout.addView(etDeviceId)
-        layout.addView(label("Security Token"))
-        layout.addView(etDeviceToken)
-        layout.addView(TextView(this).apply { height = 48 }) // Spacer
-        layout.addView(btnScan)
-        layout.addView(btnSave)
-        layout.addView(btnStart)
-        layout.addView(btnStop)
-        layout.addView(TextView(this).apply { height = 24 }) // Spacer
-        layout.addView(btnLockAdmin)
-        layout.addView(TextView(this).apply { height = 12 }) // Spacer
-        layout.addView(btnFileAccess)
-        layout.addView(TextView(this).apply { height = 12 }) // Spacer
-        layout.addView(btnXiaomi)
-        layout.addView(TextView(this).apply { height = 12 }) // Spacer
-        layout.addView(btnBatteryOpt)
+        layout.addView(tvStatus)
+        layout.addView(spacer(48))
+
+        layout.addView(sectionConnection)
+        layout.addView(spacer(32))
+        layout.addView(sectionOptimization)
+        layout.addView(spacer(32))
+        layout.addView(sectionFeatures)
+        layout.addView(spacer(32))
+        layout.addView(sectionActions)
+        layout.addView(spacer(64))
 
         scroll.addView(layout)
         root.addView(scroll)
@@ -268,7 +374,23 @@ class MainActivity : AppCompatActivity() {
         
         // Finalize setup
         initWorkManager()
+        setupStatusListener()
         handleIntent(intent)
+    }
+
+    private fun setupStatusListener() {
+        SocketManager.setStatusListener { status, detail ->
+            runOnUiThread {
+                val color = when (status) {
+                    SocketManager.ConnectionStatus.CONNECTED -> 0xFF059669.toInt() // Emerald 600
+                    SocketManager.ConnectionStatus.CONNECTING -> 0xFFD97706.toInt() // Amber 600
+                    SocketManager.ConnectionStatus.ERROR -> 0xFFDC2626.toInt() // Rose 600
+                    SocketManager.ConnectionStatus.DISCONNECTED -> 0xFF475569.toInt() // Slate 600
+                }
+                tvStatus.text = "SOCKET: $status${if (detail != null) " ($detail)" else ""}"
+                tvStatus.setTextColor(color)
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -325,11 +447,63 @@ class MainActivity : AppCompatActivity() {
         typeface = android.graphics.Typeface.DEFAULT_BOLD
     }
 
+    private fun spacer(h: Int) = TextView(this).apply { height = h }
+
+    private fun createSection(title: String, iconRes: Int, block: LinearLayout.() -> Unit): LinearLayout {
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 48, 48, 48)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xFFFFFFFF.toInt())
+                cornerRadius = 48f
+                setStroke(2, 0xFFE2E8F0.toInt()) // Slate 200
+            }
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, 32)
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
+
+        val icon = android.widget.ImageView(this).apply {
+            setImageResource(iconRes)
+            setColorFilter(0xFF6366F1.toInt()) // Indigo 500
+            layoutParams = LinearLayout.LayoutParams(48, 48)
+        }
+
+        val titleView = TextView(this).apply {
+            text = title.uppercase()
+            textSize = 12f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setTextColor(0xFF1E293B.toInt()) // Slate 800
+            setPadding(24, 0, 0, 0)
+            letterSpacing = 0.1f
+        }
+
+        header.addView(icon)
+        header.addView(titleView)
+        outer.addView(header)
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            block()
+        }
+        outer.addView(content)
+
+        return outer
+    }
+
     private fun Button.styleAsSecondary() {
         alpha = 0.6f
     }
 
     private fun checkServicePermissionsAndStart() {
+        if (isServiceRunning(AgentService::class.java)) {
+            Toast.makeText(this, "Monitoring is already active!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val permissions = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
@@ -393,12 +567,27 @@ class MainActivity : AppCompatActivity() {
 
     private fun startMonitoringService() {
         val server = prefs.getString(AgentConfig.KEY_SERVER_URL, "") ?: ""
-        if (server.isEmpty()) {
-            Toast.makeText(this, "Please configure server URL first", Toast.LENGTH_SHORT).show()
+        val deviceId = prefs.getString(AgentConfig.KEY_DEVICE_ID, "") ?: ""
+        val token = prefs.getString(AgentConfig.KEY_DEVICE_TOKEN, "") ?: ""
+
+        if (server.isEmpty() || deviceId.isEmpty() || token.isEmpty()) {
+            Toast.makeText(this, "Please configure Server, Device ID, and Token first", Toast.LENGTH_LONG).show()
             return
         }
+
         startForegroundService(Intent(this, AgentService::class.java))
         Toast.makeText(this, "Monitoring active on $server", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun isServiceRunning(serviceClass: Class<*>): Boolean {
+        val manager = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        @Suppress("DEPRECATION")
+        for (service in manager.getRunningServices(Int.MAX_VALUE)) {
+            if (serviceClass.name == service.service.className) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun checkCameraPermission() {

@@ -1,6 +1,7 @@
 package com.codewithdanu.deviceagent
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.core.content.ContextCompat
 
 /**
@@ -32,12 +33,36 @@ object AgentConfig {
     /**
      * Returns the SharedPreferences instance.
      * Uses device-protected storage if the device is in Direct Boot mode (locked).
+     * Automatically migrates data from normal storage to protected storage if found.
      */
-    fun getPrefs(context: Context) = (if (ContextCompat.isDeviceProtectedStorage(context)) {
-        context
-    } else {
-        context.createDeviceProtectedStorageContext()
-    }).getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    fun getPrefs(context: Context): SharedPreferences {
+        val protectedContext = if (ContextCompat.isDeviceProtectedStorage(context)) {
+            context
+        } else {
+            context.createDeviceProtectedStorageContext()
+        }
+
+        // Migration check: If protected storage is empty, try to move from normal storage
+        val name = PREFS_NAME
+        val protectedPrefs = protectedContext.getSharedPreferences(name, Context.MODE_PRIVATE)
+        
+        if (protectedPrefs.getString(KEY_DEVICE_ID, "").isNullOrEmpty()) {
+            val normalPrefs = context.getSharedPreferences(name, Context.MODE_PRIVATE)
+            val oldId = normalPrefs.getString(KEY_DEVICE_ID, "")
+            if (!oldId.isNullOrEmpty()) {
+                android.util.Log.i("AgentConfig", "Migrating preferences to protected storage...")
+                // Manual copy to ensure atomicity and handle direct boot context constraints
+                protectedPrefs.edit().apply {
+                    putString(KEY_DEVICE_ID, oldId)
+                    putString(KEY_DEVICE_TOKEN, normalPrefs.getString(KEY_DEVICE_TOKEN, ""))
+                    putString(KEY_SERVER_URL, normalPrefs.getString(KEY_SERVER_URL, ""))
+                    apply()
+                }
+            }
+        }
+
+        return protectedPrefs
+    }
 
     /**
      * Ensures the server URL is valid for Retrofit/Socket.io
@@ -58,5 +83,19 @@ object AgentConfig {
         url = url.replace("http:/", "http://").replace("http:///", "http://")
         
         return url
+    }
+
+    /**
+     * Helper to get Device ID from preferences.
+     */
+    fun getDeviceId(context: Context): String {
+        return getPrefs(context).getString(KEY_DEVICE_ID, "") ?: ""
+    }
+
+    /**
+     * Helper to get Device Token from preferences.
+     */
+    fun getDeviceToken(context: Context): String {
+        return getPrefs(context).getString(KEY_DEVICE_TOKEN, "") ?: ""
     }
 }
