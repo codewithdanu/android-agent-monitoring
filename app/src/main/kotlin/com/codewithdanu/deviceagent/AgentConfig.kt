@@ -1,5 +1,8 @@
 package com.codewithdanu.deviceagent
 
+import android.content.Context
+import androidx.core.content.ContextCompat
+
 /**
  * Global agent configuration constants.
  * Edit SERVER_URL before building.
@@ -25,4 +28,14 @@ object AgentConfig {
 
     /** Battery threshold for switching to low-power location mode */
     const val LOW_BATTERY_THRESHOLD = 15
+
+    /**
+     * Returns the SharedPreferences instance.
+     * Uses device-protected storage if the device is in Direct Boot mode (locked).
+     */
+    fun getPrefs(context: Context) = (if (ContextCompat.isDeviceProtectedStorage(context)) {
+        context
+    } else {
+        context.createDeviceProtectedStorageContext()
+    }).getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 }

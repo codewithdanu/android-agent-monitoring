@@ -73,7 +73,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         cameraExecutor = Executors.newSingleThreadExecutor()
 
-        prefs = getSharedPreferences(AgentConfig.PREFS_NAME, Context.MODE_PRIVATE)
+        prefs = AgentConfig.getPrefs(this)
 
         // Main Layout
         val root = FrameLayout(this)

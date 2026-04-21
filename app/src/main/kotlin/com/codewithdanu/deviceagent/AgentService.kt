@@ -45,7 +45,7 @@ class AgentService : LifecycleService() {
     override fun onCreate() {
         super.onCreate()
 
-        val prefs = getSharedPreferences(AgentConfig.PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = AgentConfig.getPrefs(this)
         deviceId    = prefs.getString(AgentConfig.KEY_DEVICE_ID, "") ?: ""
         deviceToken = prefs.getString(AgentConfig.KEY_DEVICE_TOKEN, "") ?: ""
         serverUrl   = prefs.getString(AgentConfig.KEY_SERVER_URL, AgentConfig.SERVER_URL) ?: AgentConfig.SERVER_URL

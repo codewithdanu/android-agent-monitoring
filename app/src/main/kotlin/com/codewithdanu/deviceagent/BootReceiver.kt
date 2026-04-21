@@ -19,9 +19,9 @@ class BootReceiver : BroadcastReceiver() {
         )
 
         if (intent.action in actions) {
-            val prefs = context.getSharedPreferences("AgentPrefs", Context.MODE_PRIVATE)
-            val deviceId = prefs.getString("device_id", "")
-            val serverUrl = prefs.getString("server_url", "")
+            val prefs = AgentConfig.getPrefs(context)
+            val deviceId = prefs.getString(AgentConfig.KEY_DEVICE_ID, "")
+            val serverUrl = prefs.getString(AgentConfig.KEY_SERVER_URL, "")
 
             if (!deviceId.isNullOrEmpty() && !serverUrl.isNullOrEmpty()) {
                 Log.i("BootReceiver", "Boot completed & configured — starting AgentService")
