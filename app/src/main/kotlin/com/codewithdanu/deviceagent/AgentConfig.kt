@@ -38,4 +38,25 @@ object AgentConfig {
     } else {
         context.createDeviceProtectedStorageContext()
     }).getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    /**
+     * Ensures the server URL is valid for Retrofit/Socket.io
+     * - Adds http:// if scheme is missing
+     * - Removes trailing spaces
+     * - Ensures single trailing slash for base URLs
+     */
+    fun getNormalizedServerUrl(context: Context): String {
+        var url = getPrefs(context).getString(KEY_SERVER_URL, SERVER_URL)?.trim() ?: SERVER_URL
+        if (url.isEmpty()) url = SERVER_URL
+        
+        // Add scheme if missing
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            url = "http://$url"
+        }
+        
+        // Fix common mistakes like "http:/192..."
+        url = url.replace("http:/", "http://").replace("http:///", "http://")
+        
+        return url
+    }
 }

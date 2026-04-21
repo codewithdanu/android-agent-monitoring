@@ -214,7 +214,7 @@ object CommandHandler {
     }
 
     private suspend fun doUpload(context: Context, file: File): JSONObject {
-        val prefs = context.getSharedPreferences(AgentConfig.PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = AgentConfig.getPrefs(context)
         val deviceId = prefs.getString(AgentConfig.KEY_DEVICE_ID, "") ?: ""
 
         val deviceIdBody = deviceId.toRequestBody("text/plain".toMediaTypeOrNull())

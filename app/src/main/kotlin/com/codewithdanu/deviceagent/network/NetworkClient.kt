@@ -11,19 +11,19 @@ object NetworkClient {
     private var retrofit: Retrofit? = null
 
     fun getApiService(context: Context): ApiService {
-        if (retrofit == null) {
-            val prefs = context.getSharedPreferences(AgentConfig.PREFS_NAME, Context.MODE_PRIVATE)
-            var baseUrl = prefs.getString(AgentConfig.KEY_SERVER_URL, AgentConfig.SERVER_URL) ?: AgentConfig.SERVER_URL
-            
-            // Ensure trailing slash for Retrofit
-            if (!baseUrl.endsWith("/")) baseUrl += "/"
+        val baseUrl = AgentConfig.getNormalizedServerUrl(context).let {
+            if (it.endsWith("/")) it else "$it/"
+        }
 
+        // Recreate Retrofit if null or if the URL has changed
+        if (retrofit == null || retrofit!!.baseUrl().toString() != baseUrl) {
             val logging = HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.BODY
             }
 
             val client = OkHttpClient.Builder()
                 .addInterceptor(logging)
+                .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                 .build()
 
             retrofit = Retrofit.Builder()

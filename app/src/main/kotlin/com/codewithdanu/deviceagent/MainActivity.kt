@@ -145,11 +145,15 @@ class MainActivity : AppCompatActivity() {
                     return@setOnClickListener
                 }
 
+                val normalizedServer = server.let { if (it.startsWith("http")) it else "http://$it" }.trim()
+
                 prefs.edit()
-                    .putString(AgentConfig.KEY_SERVER_URL, server)
+                    .putString(AgentConfig.KEY_SERVER_URL, normalizedServer)
                     .putString(AgentConfig.KEY_DEVICE_ID, id)
                     .putString(AgentConfig.KEY_DEVICE_TOKEN, token)
                     .apply()
+
+                etServerUrl.setText(normalizedServer)
 
                 Toast.makeText(this@MainActivity, "Configuration saved!", Toast.LENGTH_SHORT).show()
             }
@@ -262,6 +266,38 @@ class MainActivity : AppCompatActivity() {
         
         // Finalize setup
         initWorkManager()
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        val data: Uri? = intent?.data
+        if (data != null && data.scheme == "deviceagent" && data.host == "setup") {
+            val s = data.getQueryParameter("s") ?: ""
+            val i = data.getQueryParameter("i") ?: ""
+            val t = data.getQueryParameter("t") ?: ""
+
+            if (s.isNotEmpty() && i.isNotEmpty()) {
+                val normalizedServer = s.let { if (it.startsWith("http")) it else "http://$it" }.trim()
+                Log.i("MainActivity", "Deep link setup detected: $normalizedServer")
+                etServerUrl.setText(normalizedServer)
+                etDeviceId.setText(i)
+                etDeviceToken.setText(t)
+
+                prefs.edit()
+                    .putString(AgentConfig.KEY_SERVER_URL, normalizedServer)
+                    .putString(AgentConfig.KEY_DEVICE_ID, i)
+                    .putString(AgentConfig.KEY_DEVICE_TOKEN, t)
+                    .apply()
+
+                Toast.makeText(this, "Dashboard Sync Link Detected! Starting...", Toast.LENGTH_LONG).show()
+                checkServicePermissionsAndStart()
+            }
+        }
     }
 
     private fun initWorkManager() {
