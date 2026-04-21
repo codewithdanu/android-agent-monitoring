@@ -23,12 +23,16 @@ import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import org.json.JSONObject
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
     private lateinit var etDeviceId: EditText
@@ -54,7 +58,6 @@ class MainActivity : AppCompatActivity() {
     private val requestServicePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        // We explicitly requested: Location, Camera, Audio, Notifications
         val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
             || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
@@ -65,7 +68,7 @@ class MainActivity : AppCompatActivity() {
         if (fineGranted || coarseGranted) {
             startMonitoringService()
         } else {
-            Toast.makeText(this, "Location permission is required for monitoring", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Location permission is required for monitoring", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -191,8 +194,17 @@ class MainActivity : AppCompatActivity() {
             visibility = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) View.VISIBLE else View.GONE
         }
 
+        val btnXiaomi = Button(this).apply {
+            text = "Fix Auto-Start for Xiaomi"
+            setBackgroundColor(0xFFEA580C.toInt()) // Orange 600
+            setTextColor(0xFFFFFFFF.toInt())
+            setPadding(48, 24, 48, 24)
+            setOnClickListener { requestAutoStartPermission() }
+            visibility = if (Build.MANUFACTURER.equals("Xiaomi", ignoreCase = true)) View.VISIBLE else View.GONE
+        }
+
         val btnBatteryOpt = Button(this).apply {
-            text = "Disable Battery Optimization (Optional - If app stops frequently)"
+            text = "Disable Battery Optimization (Recommended)"
             setBackgroundColor(0xFF10B981.toInt()) // Emerald 500
             setTextColor(0xFFFFFFFF.toInt())
             setPadding(48, 24, 48, 24)
@@ -216,6 +228,8 @@ class MainActivity : AppCompatActivity() {
         layout.addView(btnLockAdmin)
         layout.addView(TextView(this).apply { height = 12 }) // Spacer
         layout.addView(btnFileAccess)
+        layout.addView(TextView(this).apply { height = 12 }) // Spacer
+        layout.addView(btnXiaomi)
         layout.addView(TextView(this).apply { height = 12 }) // Spacer
         layout.addView(btnBatteryOpt)
 
@@ -245,6 +259,19 @@ class MainActivity : AppCompatActivity() {
         root.addView(scannerContainer)
 
         setContentView(root)
+        
+        // Finalize setup
+        initWorkManager()
+    }
+
+    private fun initWorkManager() {
+        val workRequest = PeriodicWorkRequestBuilder<BootWorker>(15, TimeUnit.MINUTES)
+            .build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "AgentWatchdog",
+            ExistingPeriodicWorkPolicy.KEEP,
+            workRequest
+        )
     }
 
     private fun label(txt: String) = TextView(this).apply {
@@ -267,7 +294,6 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.RECORD_AUDIO
         )
         
-        // Handle Android 13 (Tiramisu) + media permissions
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
             permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
@@ -277,10 +303,6 @@ class MainActivity : AppCompatActivity() {
             @Suppress("DEPRECATION")
             permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
-        
-        // Note: FOREGROUND_SERVICE_LOCATION and FOREGROUND_SERVICE_CAMERA are 'normal' 
-        // permissions in the manifest, not 'dangerous' runtime permissions.
-        // We only request dangerous ones here.
 
         val missingPermissions = permissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -307,6 +329,22 @@ class MainActivity : AppCompatActivity() {
                 )
             }
             startActivity(intent)
+        }
+    }
+
+    private fun requestAutoStartPermission() {
+        try {
+            val intent = Intent()
+            intent.component = ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")
+            startActivity(intent)
+        } catch (e: Exception) {
+            try {
+                val intent = Intent()
+                intent.component = ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.Main")
+                startActivity(intent)
+            } catch (e2: Exception) {
+                Toast.makeText(this, "Please enable Auto-start for this app in Settings", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -382,7 +420,6 @@ class MainActivity : AppCompatActivity() {
                                 etDeviceId.setText(i)
                                 etDeviceToken.setText(t)
                                 
-                                // Auto-save to prefs
                                 if (s.isNotEmpty()) {
                                     prefs.edit()
                                         .putString(AgentConfig.KEY_SERVER_URL, s)
@@ -395,7 +432,6 @@ class MainActivity : AppCompatActivity() {
                                 Toast.makeText(this, "Setup complete & synced!", Toast.LENGTH_LONG).show()
                             }
                         } catch (e: Exception) {
-                            // Not our JSON
                         }
                     }
                 }

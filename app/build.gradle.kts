@@ -53,4 +53,7 @@ dependencies {
     implementation("androidx.camera:camera-view:1.3.0")
     implementation("androidx.camera:camera-video:1.3.0")
     implementation("com.google.mlkit:barcode-scanning:17.2.0")
+    
+    // WorkManager for reliable background wake-ups
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
 }
