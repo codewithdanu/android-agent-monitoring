@@ -192,7 +192,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val btnBatteryOpt = Button(this).apply {
-            text = "Disable Battery Optimization (Highly Recommended)"
+            text = "Disable Battery Optimization (Optional - If app stops frequently)"
             setBackgroundColor(0xFF10B981.toInt()) // Emerald 500
             setTextColor(0xFFFFFFFF.toInt())
             setPadding(48, 24, 48, 24)

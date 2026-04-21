@@ -4,6 +4,10 @@ import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -27,6 +31,16 @@ class AgentService : LifecycleService() {
     private lateinit var deviceId: String
     private lateinit var deviceToken: String
     private lateinit var serverUrl: String
+    
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            super.onAvailable(network)
+            Log.i(TAG, "Internet available — ensuring socket is connected")
+            if (!SocketManager.isConnected()) {
+                SocketManager.reconnect()
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -57,7 +71,16 @@ class AgentService : LifecycleService() {
             startForeground(NOTIFICATION_ID, notification)
         }
         connectAndMonitor()
+        registerNetworkCallback()
         Log.i(TAG, "Service started for device: $deviceId connecting to $serverUrl")
+    }
+
+    private fun registerNetworkCallback() {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        cm.registerNetworkCallback(request, networkCallback)
     }
 
     private fun connectAndMonitor() {
@@ -231,6 +254,8 @@ class AgentService : LifecycleService() {
         if (wakeLock?.isHeld == true) {
             wakeLock?.release()
         }
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        try { cm.unregisterNetworkCallback(networkCallback) } catch (_: Exception) {}
         Log.i(TAG, "Service destroyed")
         super.onDestroy()
     }

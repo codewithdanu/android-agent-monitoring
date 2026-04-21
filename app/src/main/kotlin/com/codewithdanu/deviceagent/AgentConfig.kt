@@ -14,11 +14,11 @@ object AgentConfig {
     const val KEY_DEVICE_TOKEN  = "device_token"
     const val KEY_SERVER_URL    = "server_url"
 
-    /** Metrics push interval: 1 minute */
-    const val METRICS_INTERVAL_MS = 60_000L
+    /** Metrics push interval: 15 minutes */
+    const val METRICS_INTERVAL_MS = 900_000L
 
-    /** Location update interval: 5 minutes (normal battery) */
-    const val LOCATION_INTERVAL_MS = 300_000L
+    /** Location update interval: 15 minutes (normal battery) */
+    const val LOCATION_INTERVAL_MS = 900_000L
 
     /** Location update interval: 30 minutes (battery < 15%) */
     const val LOCATION_INTERVAL_LOW_BATTERY = 1_800_000L

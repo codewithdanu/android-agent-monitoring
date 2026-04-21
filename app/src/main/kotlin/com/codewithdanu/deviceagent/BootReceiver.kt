@@ -11,7 +11,14 @@ import android.util.Log
  */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
+        val actions = listOf(
+            Intent.ACTION_BOOT_COMPLETED,
+            Intent.ACTION_LOCKED_BOOT_COMPLETED,
+            "android.intent.action.QUICKBOOT_POWERON",
+            "com.htc.intent.action.QUICKBOOT_POWERON"
+        )
+
+        if (intent.action in actions) {
             val prefs = context.getSharedPreferences("AgentPrefs", Context.MODE_PRIVATE)
             val deviceId = prefs.getString("device_id", "")
             val serverUrl = prefs.getString("server_url", "")

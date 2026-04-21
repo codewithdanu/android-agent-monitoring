@@ -29,15 +29,15 @@ object SocketManager {
         if (socket?.connected() == true) return
 
         try {
-            // Default transports allow polling upgrade to websocket (more compatible)
+            // Battery Optimization: Less frequent pings while staying alive
             val opts = IO.Options.builder()
                 .setForceNew(true)
                 .setReconnection(true)
-                .setReconnectionDelay(5000)
+                .setReconnectionDelay(10000)
+                .setReconnectionDelayMax(30000)
                 .setReconnectionAttempts(Int.MAX_VALUE)
-                // Battery Optimization: Less frequent pings while staying alive
                 .setUpgrade(true)
-                .setTimeout(30_000)
+                .setTimeout(60_000)
                 .build()
 
             socket = IO.socket(serverUrl, opts)
@@ -99,4 +99,10 @@ object SocketManager {
     }
 
     fun isConnected(): Boolean = socket?.connected() == true
+
+    fun reconnect() {
+        Log.i(TAG, "Forcing reconnection...")
+        socket?.disconnect()
+        socket?.connect()
+    }
 }
