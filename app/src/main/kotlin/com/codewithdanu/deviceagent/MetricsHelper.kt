@@ -65,7 +65,8 @@ object MetricsHelper {
         
         // Fallback for Android 8+: Return a simulated/app-specific value 
         // to indicate activity, since /proc/stat is restricted.
-        return (Math.random() * 2.0) + 0.5 // Small jitter to show it's alive
+        val usage = (Math.random() * 2.0) + 0.5
+        return Math.round(usage * 100.0) / 100.0
     }
 
     private fun getCpuUsageFromProc(): Double {
