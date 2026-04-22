@@ -150,22 +150,22 @@ object ScreenCaptureHelper {
             if (image == null) {
                 isCapturing = false
                 Log.d(TAG, "Image was null (draining might be too fast)")
-                callback(null)
+                callback(null, "No fresh frame available. Try again in a moment.")
                 return
             }
 
-            processImage(context, image) { result ->
+            processImage(context, image) { result, error ->
                 isCapturing = false
-                callback(result)
+                callback(result, error)
             }
         } catch (e: Exception) {
             isCapturing = false
             Log.e(TAG, "Error acquiring image: ${e.message}")
-            callback(null)
+            callback(null, e.message)
         }
     }
 
-    private fun processImage(context: Context, image: android.media.Image, callback: (File?) -> Unit) {
+    private fun processImage(context: Context, image: android.media.Image, callback: (File?, String?) -> Unit) {
         try {
             val width = image.width
             val height = image.height

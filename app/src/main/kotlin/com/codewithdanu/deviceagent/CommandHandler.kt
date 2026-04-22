@@ -251,21 +251,21 @@ object CommandHandler {
         if (!ScreenCaptureHelper.hasPermission()) {
             // Need to request permission via activity
             ScreenCaptureHelper.requestPermission(service)
-            return JSONObject().put("error", "Permission required. A popup appeared on the device.")
+            return JSONObject().put("error", "Screen Capture permission not granted. Please enable it in the app first.")
         }
 
-        val resultDeferred = CompletableDeferred<File?>()
-        ScreenCaptureHelper.capture(service) { file ->
-            resultDeferred.complete(file)
+        val resultDeferred = CompletableDeferred<Pair<File?, String?>>()
+        ScreenCaptureHelper.capture(service) { file, errorMsg ->
+            resultDeferred.complete(Pair(file, errorMsg))
         }
 
-        val file = resultDeferred.await()
+        val (file, error) = resultDeferred.await()
         return if (file != null) {
             val res = doUpload(service, file)
             file.delete()
             res
         } else {
-            JSONObject().put("error", "Failed to capture screen.")
+            JSONObject().put("error", error ?: "Failed to capture screen.")
         }
     }
 }
