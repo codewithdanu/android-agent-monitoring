@@ -8,7 +8,6 @@ import android.util.Log
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import android.widget.Toast
 
 /**
  * Singleton Socket.IO manager.
@@ -23,6 +22,17 @@ object SocketManager {
     var currentStatus = ConnectionStatus.DISCONNECTED
         private set
 
+    private var lastParams: ConnectionParams? = null
+
+    private data class ConnectionParams(
+        val context: Context,
+        val serverUrl: String,
+        val deviceId: String,
+        val deviceToken: String,
+        val onCommand: (JSONObject) -> Unit,
+        val onRegistered: () -> Unit
+    )
+
     fun setStatusListener(listener: (ConnectionStatus, String?) -> Unit) {
         this.statusListener = listener
         listener(currentStatus, null) // Emit current state immediately
@@ -36,7 +46,12 @@ object SocketManager {
         onCommand: (JSONObject) -> Unit,
         onRegistered: () -> Unit
     ) {
-        if (socket?.connected() == true) return
+        lastParams = ConnectionParams(context.applicationContext, serverUrl, deviceId, deviceToken, onCommand, onRegistered)
+        
+        if (socket?.connected() == true || currentStatus == ConnectionStatus.CONNECTING) {
+            Log.d(TAG, "Socket already connected or connecting. Skipping.")
+            return
+        }
 
         try {
             // Battery Optimization: Fast reconnect initially, then back off
@@ -51,6 +66,7 @@ object SocketManager {
                 .build()
 
             socket = IO.socket(serverUrl, opts)
+            currentStatus = ConnectionStatus.CONNECTING
 
             socket?.on(Socket.EVENT_CONNECT) {
                 Log.d(TAG, "Connected. Registering device...")
@@ -62,10 +78,6 @@ object SocketManager {
                     put("deviceToken", deviceToken)
                 }
                 socket?.emit("agent:register", data)
-                
-                Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(context, "Connected to server", Toast.LENGTH_SHORT).show()
-                }
             }
 
             socket?.on("agent:registered") {
@@ -91,10 +103,6 @@ object SocketManager {
                 Log.e(TAG, "Connection error: $err")
                 currentStatus = ConnectionStatus.ERROR
                 statusListener?.invoke(currentStatus, err)
-                
-                Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(context, "Connection Error: $err", Toast.LENGTH_LONG).show()
-                }
             }
 
             socket?.connect()
@@ -114,13 +122,26 @@ object SocketManager {
     fun disconnect() {
         socket?.disconnect()
         socket = null
+        currentStatus = ConnectionStatus.DISCONNECTED
     }
 
     fun isConnected(): Boolean = socket?.connected() == true
 
     fun reconnect() {
         Log.i(TAG, "Forcing reconnection...")
-        socket?.disconnect()
-        socket?.connect()
+        val s = socket
+        if (s == null) {
+            val params = lastParams
+            if (params != null) {
+                Log.i(TAG, "Socket was null, re-initializing with stored params")
+                connect(params.context, params.serverUrl, params.deviceId, params.deviceToken, params.onCommand, params.onRegistered)
+            } else {
+                Log.e(TAG, "Cannot reconnect: No stored parameters")
+            }
+        } else {
+            if (!s.connected()) {
+                s.connect()
+            }
+        }
     }
 }

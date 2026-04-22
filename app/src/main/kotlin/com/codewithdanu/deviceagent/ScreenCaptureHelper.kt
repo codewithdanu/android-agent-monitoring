@@ -41,11 +41,62 @@ object ScreenCaptureHelper {
     fun onPermissionResult(context: Context, resultCode: Int, data: Intent) {
         projectionResultCode = resultCode
         projectionData = data
-        Log.i(TAG, "Screen capture permission granted and stored")
+        Log.i(TAG, "Permission GRANTED: ResultCode=$resultCode, Data=$data")
         
-        // Android 14+: Do NOT setup session immediately. 
-        // Setup will happen during the first capture request while the service is running as foreground.
-        stopSession()
+        // Clean up any old components but KEEP the new token
+        cleanupSession()
+        
+        // Android 14+: Crucial to update service type to mediaProjection
+        val serviceIntent = Intent(context, AgentService::class.java).apply {
+            putExtra("refresh_foreground", true)
+        }
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent)
+            } else {
+                context.startService(serviceIntent)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to notify service of new permission: ${e.message}")
+        }
+    }
+
+    /**
+     * Cleans up the active session (VirtualDisplay, Projection) but keeps the permission token.
+     */
+    private fun cleanupSession() {
+        Log.d(TAG, "Cleaning up session components (keeping token)")
+        try {
+            activeVirtualDisplay?.release()
+            activeProjection?.stop()
+            activeImageReader?.close()
+        } catch (e: Exception) {
+            Log.w(TAG, "Cleanup warning: ${e.message}")
+        } finally {
+            activeVirtualDisplay = null
+            activeProjection = null
+            activeImageReader = null
+            isCapturing = false
+        }
+    }
+
+    /**
+     * Fully resets everything, including clearing the permission token.
+     * Only call this if the token is proven to be invalid (e.g. SecurityException).
+     */
+    fun clearPermission() {
+        Log.w(TAG, "Clearing permission token and session")
+        cleanupSession()
+        projectionData = null
+        projectionResultCode = -1
+    }
+
+    /**
+     * Standard stop: clears components but keeps the token for next time.
+     */
+    fun stopSession() {
+        Log.i(TAG, "Stopping session (retaining permission token)")
+        cleanupSession()
     }
 
     @SuppressLint("WrongConstant")
@@ -136,33 +187,54 @@ object ScreenCaptureHelper {
     }
 
     private fun performFrameCapture(context: Context, callback: (File?, String?) -> Unit) {
-        val reader = activeImageReader
-        if (reader == null) {
-            callback(null, "Session not initialized")
-            return
-        }
+        val reader = activeImageReader ?: return callback(null, "Session not initialized")
 
-        try {
-            isCapturing = true
-            // Acquiring the latest image from the stream
-            val image = reader.acquireLatestImage()
+        Log.d(TAG, "Starting frame capture...")
+        isCapturing = true
+        
+        // Use a timeout to avoid hanging if no frames arrive
+        val timeoutHandler = Handler(Looper.getMainLooper())
+        val timeoutRunnable = Runnable {
+            if (isCapturing) {
+                isCapturing = false
+                Log.w(TAG, "Frame capture timed out")
+                callback(null, "Capture timed out. Is the screen off or locked?")
+            }
+        }
+        timeoutHandler.postDelayed(timeoutRunnable, 5000)
+
+        // Set a one-time listener to catch the next available frame
+        reader.setOnImageAvailableListener({ r ->
+            if (!isCapturing) return@setOnImageAvailableListener
             
-            if (image == null) {
+            try {
+                val image = r.acquireLatestImage()
+                if (image != null) {
+                    isCapturing = false
+                    timeoutHandler.removeCallbacks(timeoutRunnable)
+                    
+                    // Restore background drainer after capture
+                    restoreDrainer(r)
+                    
+                    processImage(context, image, callback)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during listener capture: ${e.message}")
                 isCapturing = false
-                Log.d(TAG, "Image was null (draining might be too fast)")
-                callback(null, "No fresh frame available. Try again in a moment.")
-                return
+                timeoutHandler.removeCallbacks(timeoutRunnable)
+                restoreDrainer(r)
+                callback(null, e.message)
             }
+        }, Handler(Looper.getMainLooper()))
+    }
 
-            processImage(context, image) { result, error ->
-                isCapturing = false
-                callback(result, error)
-            }
-        } catch (e: Exception) {
-            isCapturing = false
-            Log.e(TAG, "Error acquiring image: ${e.message}")
-            callback(null, e.message)
-        }
+    private fun restoreDrainer(reader: ImageReader) {
+        reader.setOnImageAvailableListener({ r ->
+            if (isCapturing) return@setOnImageAvailableListener
+            try {
+                r.acquireLatestImage()?.close()
+            } catch (_: Exception) {}
+        }, Handler(Looper.getMainLooper()))
     }
 
     private fun processImage(context: Context, image: android.media.Image, callback: (File?, String?) -> Unit) {
@@ -205,26 +277,6 @@ object ScreenCaptureHelper {
             Log.e(TAG, "Image processing failed: ${e.message}")
             image.close()
             callback(null, e.message)
-        }
-    }
-
-    fun stopSession() {
-        Log.i(TAG, "Stopping persistent screen capture session")
-        try {
-            activeVirtualDisplay?.release()
-            activeProjection?.stop()
-            activeImageReader?.close()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error cleaning up session: ${e.message}")
-        } finally {
-            activeVirtualDisplay = null
-            activeProjection = null
-            activeImageReader = null
-            
-            // If the system stopped us (MediaProjection.Callback.onStop), 
-            // we MUST clear the token because it's no longer reusable.
-            projectionData = null
-            projectionResultCode = -1
         }
     }
 

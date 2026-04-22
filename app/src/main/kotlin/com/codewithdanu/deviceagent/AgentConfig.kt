@@ -47,17 +47,21 @@ object AgentConfig {
         val protectedPrefs = protectedContext.getSharedPreferences(name, Context.MODE_PRIVATE)
         
         if (protectedPrefs.getString(KEY_DEVICE_ID, "").isNullOrEmpty()) {
-            val normalPrefs = context.getSharedPreferences(name, Context.MODE_PRIVATE)
-            val oldId = normalPrefs.getString(KEY_DEVICE_ID, "")
-            if (!oldId.isNullOrEmpty()) {
-                android.util.Log.i("AgentConfig", "Migrating preferences to protected storage...")
-                // Manual copy to ensure atomicity and handle direct boot context constraints
-                protectedPrefs.edit().apply {
-                    putString(KEY_DEVICE_ID, oldId)
-                    putString(KEY_DEVICE_TOKEN, normalPrefs.getString(KEY_DEVICE_TOKEN, ""))
-                    putString(KEY_SERVER_URL, normalPrefs.getString(KEY_SERVER_URL, ""))
-                    apply()
+            try {
+                val normalPrefs = context.getSharedPreferences(name, Context.MODE_PRIVATE)
+                val oldId = normalPrefs.getString(KEY_DEVICE_ID, "")
+                if (!oldId.isNullOrEmpty()) {
+                    android.util.Log.i("AgentConfig", "Migrating preferences to protected storage...")
+                    // Manual copy to ensure atomicity and handle direct boot context constraints
+                    protectedPrefs.edit().apply {
+                        putString(KEY_DEVICE_ID, oldId)
+                        putString(KEY_DEVICE_TOKEN, normalPrefs.getString(KEY_DEVICE_TOKEN, ""))
+                        putString(KEY_SERVER_URL, normalPrefs.getString(KEY_SERVER_URL, ""))
+                        apply()
+                    }
                 }
+            } catch (e: Exception) {
+                android.util.Log.w("AgentConfig", "Skipping migration during Direct Boot: ${e.message}")
             }
         }
 

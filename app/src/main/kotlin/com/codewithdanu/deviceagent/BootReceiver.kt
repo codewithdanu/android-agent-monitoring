@@ -26,30 +26,38 @@ class BootReceiver : BroadcastReceiver() {
         if (intent.action in actions || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
             Log.i("BootReceiver", "Startup trigger detected: ${intent.action}")
             
-            // 1. Direct aggressive start (allowed for BOOT_COMPLETED intents)
+            val appContext = context.applicationContext
+            
+            // 1. Direct aggressive start
             try {
-                val serviceIntent = Intent(context, AgentService::class.java)
+                val serviceIntent = Intent(appContext, AgentService::class.java)
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    context.startForegroundService(serviceIntent)
+                    appContext.startForegroundService(serviceIntent)
                 } else {
-                    context.startService(serviceIntent)
+                    appContext.startService(serviceIntent)
                 }
                 Log.d("BootReceiver", "Service started directly from receiver")
             } catch (e: Exception) {
                 Log.e("BootReceiver", "Failed to start service directly: ${e.message}")
             }
 
-            // 2. WorkManager backup (more reliable for persistent lifecycle)
-            val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build()
+            // 2. WorkManager backup (ensures it starts even if direct start is throttled)
+            try {
+                val constraints = Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
 
-            val workRequest = OneTimeWorkRequestBuilder<BootWorker>()
-                .setExpedited(androidx.work.OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-                .setConstraints(constraints)
-                .build()
-            
-            WorkManager.getInstance(context).enqueue(workRequest)
+                val workRequest = OneTimeWorkRequestBuilder<BootWorker>()
+                    .setExpedited(androidx.work.OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+                    .setConstraints(constraints)
+                    .addTag("BOOT_RECOVERY")
+                    .build()
+                
+                WorkManager.getInstance(appContext).enqueue(workRequest)
+                Log.d("BootReceiver", "BootWorker backup enqueued")
+            } catch (e: Exception) {
+                Log.e("BootReceiver", "Failed to enqueue BootWorker: ${e.message}")
+            }
         }
     }
 }

