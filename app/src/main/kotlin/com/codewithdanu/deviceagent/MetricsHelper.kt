@@ -64,24 +64,26 @@ object MetricsHelper {
             // Android 8.0+ restricts /proc/stat access for third-party apps
             // We'll return a minimal simulated value if restricted to avoid 0% flatline
             val reader = java.io.RandomAccessFile("/proc/stat", "r")
-            val line = reader.readLine()
+            val line = reader.readLine() ?: return 0.0
             reader.close()
 
             // cpu  user nice system idle iowait irq softirq
-            val toks = line.split("\\s+".toRegex()).drop(1)
-            val idle = toks[3].toLong()
-            val total = toks.take(7).sumOf { it.toLong() }
+            val toks = line.trim().split("\\s+".toRegex()).drop(1)
+            if (toks.size < 4) return 0.0
+            val idle = toks[3].toLongOrNull() ?: return 0.0
+            val total = toks.take(7).sumOf { it.toLongOrNull() ?: 0L }
 
             // Second reading after short delay
             Thread.sleep(200)
 
             val reader2 = java.io.RandomAccessFile("/proc/stat", "r")
-            val line2 = reader2.readLine()
+            val line2 = reader2.readLine() ?: return 0.0
             reader2.close()
 
-            val toks2 = line2.split("\\s+".toRegex()).drop(1)
-            val idle2 = toks2[3].toLong()
-            val total2 = toks2.take(7).sumOf { it.toLong() }
+            val toks2 = line2.trim().split("\\s+".toRegex()).drop(1)
+            if (toks2.size < 4) return 0.0
+            val idle2 = toks2[3].toLongOrNull() ?: return 0.0
+            val total2 = toks2.take(7).sumOf { it.toLongOrNull() ?: 0L }
 
             val diffTotal = total2 - total
             val diffIdle = idle2 - idle

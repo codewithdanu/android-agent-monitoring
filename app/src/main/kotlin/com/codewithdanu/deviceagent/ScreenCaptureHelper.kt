@@ -43,25 +43,24 @@ object ScreenCaptureHelper {
         projectionData = data
         Log.i(TAG, "Screen capture permission granted and stored")
         
-        // CRITICAL: Use applicationContext to ensure the session isn't tied to the Activity's lifecycle
-        val appContext = context.applicationContext
+        // Android 14+: Do NOT setup session immediately. 
+        // Setup will happen during the first capture request while the service is running as foreground.
         stopSession()
-        setupSession(appContext, data)
     }
 
     @SuppressLint("WrongConstant")
-    fun capture(context: Context, callback: (File?) -> Unit) {
+    fun capture(context: Context, callback: (File?, String?) -> Unit) {
         val data = projectionData
         if (data == null) {
             Log.e(TAG, "No projection data available. Must request permission first.")
-            callback(null)
+            callback(null, "No permission token. Please enable Screen Capture in the app.")
             return
         }
 
         // Initialize persistent session if it's not already running
         if (activeProjection == null || activeVirtualDisplay == null) {
             if (!setupSession(context, data)) {
-                callback(null)
+                callback(null, "Session setup failed. Ensure 'Display pop-up windows while running in the background' is enabled on Xiaomi.")
                 return
             }
             // Give it a moment to initialize
@@ -126,19 +125,20 @@ object ScreenCaptureHelper {
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to setup persistent session: ${e.message}")
-            // CRITICAL: On Android 14+, if setup fails, the token is often invalidated.
-            // We MUST clear the stored permission data so the next attempt triggers a fresh request.
-            projectionData = null
-            projectionResultCode = -1
+            // Clear projection data if it's a SecurityException (often means token is invalid or service type mismatch)
+            if (e is SecurityException) {
+                projectionData = null
+                projectionResultCode = -1
+            }
             stopSession()
             return false
         }
     }
 
-    private fun performFrameCapture(context: Context, callback: (File?) -> Unit) {
+    private fun performFrameCapture(context: Context, callback: (File?, String?) -> Unit) {
         val reader = activeImageReader
         if (reader == null) {
-            callback(null)
+            callback(null, "Session not initialized")
             return
         }
 
@@ -194,11 +194,17 @@ object ScreenCaptureHelper {
             }
             
             Log.i(TAG, "Screenshot captured from active session: ${file.absolutePath}")
-            callback(file)
+            callback(file, null)
+            
+            // CRITICAL: Recycle bitmaps to prevent OutOfMemoryError
+            if (finalBitmap != bitmap) {
+                finalBitmap.recycle()
+            }
+            bitmap.recycle()
         } catch (e: Exception) {
             Log.e(TAG, "Image processing failed: ${e.message}")
             image.close()
-            callback(null)
+            callback(null, e.message)
         }
     }
 

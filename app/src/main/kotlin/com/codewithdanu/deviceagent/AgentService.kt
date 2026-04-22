@@ -45,37 +45,78 @@ class AgentService : LifecycleService() {
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "AgentService.onCreate() — Startup initiated")
+    }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val prefs = AgentConfig.getPrefs(this)
-        deviceId    = prefs.getString(AgentConfig.KEY_DEVICE_ID, "") ?: ""
-        deviceToken = prefs.getString(AgentConfig.KEY_DEVICE_TOKEN, "") ?: ""
-        serverUrl   = AgentConfig.getNormalizedServerUrl(this)
+        super.onStartCommand(intent, flags, startId)
+        
+        // 1. Mandatory for Android 14+: Call startForeground immediately.
+        startForegroundServiceWithNotification("Initializing...")
 
-        Log.d(TAG, "Config loaded: ID=$deviceId URL=$serverUrl")
-        if (deviceId.isEmpty()) {
+        val devId = intent?.getStringExtra("device_id") ?: prefs.getString(AgentConfig.KEY_DEVICE_ID, "") ?: ""
+        if (devId.isEmpty()) {
             Log.e(TAG, "Device not configured — stopping service")
             stopSelf()
-            return
+            return START_NOT_STICKY
         }
+        
+        this.deviceId = devId
+        this.serverUrl = intent?.getStringExtra("server_url") ?: AgentConfig.getNormalizedServerUrl(this)
+        this.deviceToken = intent?.getStringExtra("device_token") ?: prefs.getString(AgentConfig.KEY_DEVICE_TOKEN, "") ?: ""
+        
+        // 2. Update notification with actual device info
+        startForegroundServiceWithNotification(this.deviceId)
 
         locationHelper = LocationHelper(this)
-        
         powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-        wakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "Agent:WakeLock")
+        wakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "DeviceAgent:WakeLock")
+        
+        connectAndMonitor()
+        registerNetworkCallback()
+        
+        Log.i(TAG, "Service started for device: ${this.deviceId} connecting to ${this.serverUrl}")
+        return START_STICKY
+    }
 
-        val notification = buildNotification()
+    private fun startForegroundServiceWithNotification(content: String) {
+        val channelId = "agent_service_channel"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "Agent Service", NotificationManager.IMPORTANCE_LOW)
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.createNotificationChannel(channel)
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle("Device Agent Active")
+            .setContentText("Monitoring: $content")
+            .setSmallIcon(android.R.drawable.ic_menu_info_details)
+            .setContentIntent(pendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            val type = ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or 
+            // Android 14+: Only include types that don't require an active user session token at startup.
+            // mediaProjection MUST NOT be included unless the service is started from an activity 
+            // that just received the projection token.
+            var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or 
                        ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or 
-                       ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
-                       ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                       ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            
+            if (ScreenCaptureHelper.hasPermission()) {
+                type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            }
+            
             startForeground(NOTIFICATION_ID, notification, type)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
-        connectAndMonitor()
-        registerNetworkCallback()
-        Log.i(TAG, "Service started for device: $deviceId connecting to $serverUrl")
     }
 
     private fun registerNetworkCallback() {
@@ -169,7 +210,7 @@ class AgentService : LifecycleService() {
     }
 
     private suspend fun sendLocation(forceHighAccuracy: Boolean = false) {
-        val loc = locationHelper?.getLastLocation(forceHighAccuracy) ?: return
+        val loc = locationHelper.getLastLocation(forceHighAccuracy) ?: return
         val data = JSONObject().apply {
             put("deviceId",       deviceId)
             put("latitude",       loc.latitude)
@@ -257,10 +298,6 @@ class AgentService : LifecycleService() {
             .build()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        super.onStartCommand(intent, flags, startId)
-        return START_STICKY  // Restart if killed
-    }
 
     override fun onDestroy() {
         scope.cancel()

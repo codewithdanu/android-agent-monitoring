@@ -642,31 +642,41 @@ class MainActivity : AppCompatActivity() {
                     for (barcode in barcodes) {
                         val rawValue = barcode.rawValue ?: continue
                         try {
-                            val json = JSONObject(rawValue)
+                            var s = ""
+                            var i = ""
+                            var t = ""
+                            
+                            if (rawValue.startsWith("{")) {
+                                val json = JSONObject(rawValue)
+                                s = json.optString("s")
+                                i = json.optString("i")
+                                t = json.optString("t")
+                            } else if (rawValue.contains("/setup?") || rawValue.startsWith("deviceagent://")) {
+                                val uri = Uri.parse(rawValue)
+                                s = uri.getQueryParameter("s") ?: ""
+                                i = uri.getQueryParameter("i") ?: ""
+                                t = uri.getQueryParameter("t") ?: ""
+                            }
+                            
+                            if (s.isEmpty() && i.isEmpty()) continue
+
                             runOnUiThread {
-                                val s = json.optString("s")
-                                val i = json.optString("i")
-                                val t = json.optString("t")
-                                
                                 etServerUrl.setText(s)
                                 etDeviceId.setText(i)
                                 etDeviceToken.setText(t)
                                 
-                                if (s.isNotEmpty()) {
-                                    prefs.edit()
-                                        .putString(AgentConfig.KEY_SERVER_URL, s)
-                                        .putString(AgentConfig.KEY_DEVICE_ID, i)
-                                        .putString(AgentConfig.KEY_DEVICE_TOKEN, t)
-                                        .apply()
-                                    
-                                    stopCamera()
-                                    Toast.makeText(this, "Setup synced! Starting service...", Toast.LENGTH_LONG).show()
-                                    checkServicePermissionsAndStart()
-                                } else {
-                                    stopCamera()
-                                }
+                                prefs.edit()
+                                    .putString(AgentConfig.KEY_SERVER_URL, s)
+                                    .putString(AgentConfig.KEY_DEVICE_ID, i)
+                                    .putString(AgentConfig.KEY_DEVICE_TOKEN, t)
+                                    .apply()
+                                
+                                stopCamera()
+                                Toast.makeText(this, "Setup synced! Starting service...", Toast.LENGTH_LONG).show()
+                                checkServicePermissionsAndStart()
                             }
                         } catch (e: Exception) {
+                            Log.e("Scanner", "Failed to parse QR: ${e.message}")
                         }
                     }
                 }
